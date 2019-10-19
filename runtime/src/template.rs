@@ -84,10 +84,11 @@ decl_module! {
 			let ttl = 31556926;
 			// TODO: Get off-chain worker for getting the time 
 			let reg_date = <timestamp::Module<T>>::now();
-			let to_balance: T::Balance = T::Balance::from(INIT_BID);
+			let to_balance = |u: u32| T::Balance::from(u);
+			let to_moment = |u: u32| T::Moment::from(u);
 			
 			// Try to withdraw price from the user account to register domain 
-			let _ = <balances::Module<T> as Currency<_>>::withdraw(&sender, to_balance, WithdrawReason::Reserve, ExistenceRequirement::KeepAlive)?;			
+			let _ = <balances::Module<T> as Currency<_>>::withdraw(&sender, to_balance(INIT_BID), WithdrawReason::Reserve, ExistenceRequirement::KeepAlive)?;			
 
 			// Register domain
 			let new_domain = Domain{source: sender.clone(), price: INIT_BID, ttl: ttl, reg_date: reg_date};
@@ -98,7 +99,7 @@ decl_module! {
 				Err(e) => ()
 			}
 			
-			Self::deposit_event(RawEvent::DomainRegistered(sender.clone(), INIT_BID, ttl, reg_date));
+			Self::deposit_event(RawEvent::DomainRegistered(sender.clone(), to_balance(INIT_BID), to_moment(ttl), reg_date));
 			
 			Ok(())
 		}
@@ -133,18 +134,16 @@ decl_module! {
 }
 
 decl_event!(
-	pub enum Event<T> where AccountId = <T as system::Trait>::AccountId, Hash = <T as system::Trait>::Hash, Price = u32, Ttl=u32
-, RegDate=<T as timestamp::Trait>::Moment
-, EndDate=<T as timestamp::Trait>::Moment
+	pub enum Event<T> where AccountId = <T as system::Trait>::AccountId, <T as system::Trait>::Hash, <T as balances::Trait>::Balance, <T as timestamp::Trait>::Moment
  {
 		// Just a dummy event.
 		// Event `Something` is declared with a parameter of the type `u32` and `AccountId`
 		// To emit this event, we call the deposit funtion, from our runtime funtions
 		SomethingStored(u32, AccountId),
-		DomainRegistered(AccountId, Price, Ttl, RegDate),
-		NewAuction(AccountId, Hash, Price, Ttl, EndDate), 
-		NewBid(AccountId, Hash, Price),
-		AuctionFinalized(AccountId, Hash, Price),
+		DomainRegistered(AccountId, Balance, Moment, Moment),
+		NewAuction(AccountId, Hash, Balance, Moment, Moment), 
+		NewBid(AccountId, Hash, Balance),
+		AuctionFinalized(AccountId, Hash, Balance),
 	}
 );
 
@@ -203,7 +202,8 @@ mod tests {
 		type AvailableBlockRatio = AvailableBlockRatio;
 		type Version = ();
 	}
-	impl Trait for Test {
+
+	impl Trait for Test  {
 		type Event = ();
 	}
 	type TemplateModule = Module<Test>;
