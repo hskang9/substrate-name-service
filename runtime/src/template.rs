@@ -16,11 +16,11 @@ use codec::{Encode, Decode};
 const INIT_BID: u32 = 1000;
 
 #[derive(Encode, Decode, Default, Clone, PartialEq)]
-pub struct Domain<AccountId, Moment> {
-	source: AccountId,
-	price: u32,
-	ttl: u32,
-	reg_date: Moment
+pub struct Domain<AccountId, Balance, Moment> {
+	owner: AccountId,
+	price: Balance,
+	ttl: Moment,
+	registered_date: Moment
 }
 
 #[derive(Encode, Decode, Default, Clone, PartialEq)]
@@ -47,7 +47,7 @@ decl_storage! {
 		// Here we are declaring a StorageValue, `Something` as a Option<u32>
 		// `get(something)` is the default getter which returns either the stored `u32` or `None` if nothing stored
 		Something get(something): Option<u32>;
-		Resolver get(domain): map T::Hash => Domain<T::AccountId, T::Moment>;
+		Resolver get(domain): map T::Hash => Domain<T::AccountId, T::Balance, T::Moment>;
 		Auction get(item): map T::Hash => Item;
 	}
 }
@@ -59,53 +59,44 @@ decl_module! {
 		// Initializing events
 		// this is needed only if you are using events in your module
 		fn deposit_event() = default;
-
-		// Just a dummy entry point.
-		// function that can be called by the external world as an extrinsics call
-		// takes a parameter of the type `AccountId`, stores it and emits an event
-		pub fn do_something(origin, something: u32) -> Result {
-			// TODO: You only need this if you want to check it was signed.
-			let who = ensure_signed(origin)?;
-
-			// TODO: Code to execute when something calls this.
-			// For example: the following line stores the passed in u32 in the storage
-			Something::put(something);
-
-			// here we are raising the Something event
-			Self::deposit_event(RawEvent::SomethingStored(something, who));
-			Ok(())
-		}
 		
 		// Register domain with 1 year ttl(31556926) and 1 DOT base price
-		pub fn register(origin, domain_hash: T::Hash) -> Result {
+		pub fn register_domain(origin, domain_hash: T::Hash) -> Result {
 			let sender = ensure_signed(origin)?;
 			ensure!(!<Resolver<T>>::exists(domain_hash), "The domain already exists");
-			
-			let ttl = 31556926;
-			// TODO: Get off-chain worker for getting the time 
-			let reg_date = <timestamp::Module<T>>::now();
-			let to_balance = |u: u32| T::Balance::from(u);
-			let to_moment = |u: u32| T::Moment::from(u);
+			// Convert numbers into generic types which codec supports
+			// Generic types can process arithmetics and comparisons just as other rust variables
+			let ttl = T::Moment::from(31556926);
+			let init_price = T::Balance::from(INIT_BID); 
+			let reg_date: T::Moment = <timestamp::Module<T>>::now();
 			
 			// Try to withdraw price from the user account to register domain 
-			let _ = <balances::Module<T> as Currency<_>>::withdraw(&sender, to_balance(INIT_BID), WithdrawReason::Reserve, ExistenceRequirement::KeepAlive)?;			
+			let _ = <balances::Module<T> as Currency<_>>::withdraw(&sender, init_price, WithdrawReason::Reserve, ExistenceRequirement::KeepAlive)?;			
 
 			// Register domain
-			let new_domain = Domain{source: sender.clone(), price: INIT_BID, ttl: ttl, reg_date: reg_date};
+			let new_domain = Domain{owner: sender.clone(), price: init_price, ttl: ttl, registered_date: reg_date};
 			let new_item = Item{highest_bid: INIT_BID, finalized_date: 0, reg_date: 0, available: false};
 
 			match Self::new_domain(domain_hash, new_domain, new_item) {
-				Ok(()) => (),
+				Ok(()) => Self::deposit_event(RawEvent::DomainRegistered(sender.clone(), init_price, ttl, reg_date)),
 				Err(e) => ()
 			}
 			
-			Self::deposit_event(RawEvent::DomainRegistered(sender.clone(), to_balance(INIT_BID), to_moment(ttl), reg_date));
 			
 			Ok(())
 		}
 
 		pub fn set_sale(origin, domain_hash: T::Hash) -> Result {
+			let sender = ensure_signed(origin)?;
+			let mut new_domain = Self::item(domain_hash.clone());
+			// Ensure the sender is the owner of the domain
+			ensure!(sender == Self::domain(domain_hash.clone()).owner, "You are not the owner of the domain");
+			// Set sale and put time to finalize the auction
+			new_domain.available = true;
+			// Set new domain in the Domain storage
+			
 
+			
 
 			Ok(())
 		}
@@ -125,7 +116,7 @@ decl_module! {
 			// The bid price is higher than the current highest bid
 			ensure!(item.highest_bid < bid, "Bid higher");
 
-			// transfer the money to 
+			// transfer the token
 
 
 			Ok(())
@@ -136,10 +127,6 @@ decl_module! {
 decl_event!(
 	pub enum Event<T> where AccountId = <T as system::Trait>::AccountId, <T as system::Trait>::Hash, <T as balances::Trait>::Balance, <T as timestamp::Trait>::Moment
  {
-		// Just a dummy event.
-		// Event `Something` is declared with a parameter of the type `u32` and `AccountId`
-		// To emit this event, we call the deposit funtion, from our runtime funtions
-		SomethingStored(u32, AccountId),
 		DomainRegistered(AccountId, Balance, Moment, Moment),
 		NewAuction(AccountId, Hash, Balance, Moment, Moment), 
 		NewBid(AccountId, Hash, Balance),
@@ -148,7 +135,7 @@ decl_event!(
 );
 
 impl<T: Trait> Module<T> {
-	fn new_domain(hash: T::Hash, domain: Domain<T::AccountId, T::Moment>, item: Item) -> Result {
+	fn new_domain(hash: T::Hash, domain: Domain<T::AccountId, T::Balance, T::Moment>, item: Item) -> Result {
 		<Resolver<T>>::insert(hash, domain);
 		<Auction<T>>::insert(hash, item);
 		Ok(())
