@@ -21,15 +21,11 @@ pub struct Domain<AccountId, Balance, Moment> {
 	price: Balance,
 	ttl: Moment,
 	registered_date: Moment
+	available: bool,
+	highest_bid: Balance,
+	auction_closes: Moment,
 }
 
-#[derive(Encode, Decode, Default, Clone, PartialEq)]
-pub struct Item {
-	highest_bid: u32,
-	finalized_date: u32,
-	reg_date: u32,
-	available: bool
-}
 
 /// The module's configuration trait.
 pub trait Trait: system::Trait + balances::Trait + timestamp::Trait {
@@ -48,7 +44,6 @@ decl_storage! {
 		// `get(something)` is the default getter which returns either the stored `u32` or `None` if nothing stored
 		Something get(something): Option<u32>;
 		Resolver get(domain): map T::Hash => Domain<T::AccountId, T::Balance, T::Moment>;
-		Auction get(item): map T::Hash => Item;
 	}
 }
 
@@ -74,15 +69,22 @@ decl_module! {
 			let _ = <balances::Module<T> as Currency<_>>::withdraw(&sender, init_price, WithdrawReason::Reserve, ExistenceRequirement::KeepAlive)?;			
 
 			// Register domain
-			let new_domain = Domain{owner: sender.clone(), price: init_price, ttl: ttl, registered_date: reg_date};
+			let new_domain = Domain{
+				owner: sender.clone(),
+				price: init_price, 
+				ttl: ttl, 
+				registered_date: reg_date,
+				available: false,
+				highest_bid: T::Balance::from(0),
+				auction_closed: T::Moment::from(0)
+				};
 			let new_item = Item{highest_bid: INIT_BID, finalized_date: 0, reg_date: 0, available: false};
 
 			match Self::new_domain(domain_hash, new_domain, new_item) {
 				Ok(()) => Self::deposit_event(RawEvent::DomainRegistered(sender.clone(), init_price, ttl, reg_date)),
 				Err(e) => ()
 			}
-			
-			
+				
 			Ok(())
 		}
 
@@ -93,6 +95,7 @@ decl_module! {
 			ensure!(sender == Self::domain(domain_hash.clone()).owner, "You are not the owner of the domain");
 			// Set sale and put time to finalize the auction
 			new_domain.available = true;
+			new_domain.
 			// Set new domain in the Domain storage
 			
 
