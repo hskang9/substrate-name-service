@@ -14,18 +14,24 @@ use system::{ensure_signed};
 use codec::{Encode, Decode};
 
 const INIT_BID: u32 = 1000;
+const YEAR: u32 = 31556926;
 
 #[derive(Encode, Decode, Default, Clone, PartialEq)]
 pub struct Domain<AccountId, Balance, Moment> {
-	owner: AccountId,
+	source: AccountId,
 	price: Balance,
 	ttl: Moment,
-	registered_date: Moment
+	registered_date: Moment,
 	available: bool,
 	highest_bid: Balance,
+	bidder: AccountId,
 	auction_closed: Moment,
 }
 
+#[derive(Encode, Decode, Default, Clone, PartialEq)]
+pub struct Item {
+	
+}
 
 /// The module's configuration trait.
 pub trait Trait: system::Trait + balances::Trait + timestamp::Trait {
@@ -42,7 +48,7 @@ decl_storage! {
 		// Just a dummy storage item.
 		// Here we are declaring a StorageValue, `Something` as a Option<u32>
 		// `get(something)` is the default getter which returns either the stored `u32` or `None` if nothing stored
-		Domains get(total_domains): Option<u32>;
+		Domains get(total_domains): u64;
 		Resolver get(domain): map T::Hash => Domain<T::AccountId, T::Balance, T::Moment>;
 	}
 }
@@ -61,75 +67,151 @@ decl_module! {
 			ensure!(!<Resolver<T>>::exists(domain_hash), "The domain already exists");
 			// Convert numbers into generic types which codec supports
 			// Generic types can process arithmetics and comparisons just as other rust variables
-			let ttl = T::Moment::from(31556926);
+			let ttl = T::Moment::from(YEAR);
 			let init_price = T::Balance::from(INIT_BID); 
 			let reg_date: T::Moment = <timestamp::Module<T>>::now();
 			
 			// Try to withdraw price from the user account to register domain 
 			let _ = <balances::Module<T> as Currency<_>>::withdraw(&sender, init_price, WithdrawReason::Reserve, ExistenceRequirement::KeepAlive)?;			
 
-			// Register domain
+			// make new Domain struct
 			let new_domain = Domain{
-				owner: sender.clone(),
-				price: init_price, 
-				ttl: ttl, 
+				source: sender.clone(),
+				price: init_price,
+				ttl: ttl,
 				registered_date: reg_date,
 				available: false,
 				highest_bid: T::Balance::from(0),
+				bidder: sender.clone(),
 				auction_closed: T::Moment::from(0)
 				};
 
-			match <Domains<T>>::get() {
-				None => <Domains<T>>::set(0);
-				_ => ()
-			}
+			// Insert new domain to the Resolver state
+			<Resolver<T>>::insert(domain_hash, new_domain);
 
-			match <Resolver<T>>::insert(domain_hash.clone(), new_domain) {
-				Ok(()) => {
-					Self::domains
-					<Domains<T>>::set(Self::total_domains + 1);
-					Self::deposit_event(RawEvent::DomainRegistered(sender.clone(), init_price, ttl, reg_date))
-				},
-				Err(e) => ()
-			}
+			// Increment domain number	
+			let mut domains = Self::total_domains();
+			domains = domains.wrapping_add(1);
 
-				
+			// Store domain number to Domains state
+			Domains::put(domains);			
+
+			// Deposit event
+			Self::deposit_event(RawEvent::DomainRegistered(sender.clone(), init_price, ttl, reg_date));
+			
 			Ok(())
 		}
 
-		pub fn set_sale(origin, domain_hash: T::Hash) -> Result {
+		pub fn resolve(origin, domain_hash: T::Hash) -> Result {
+			let domain = Self::domain(domain_hash);
+			Self::deposit_event(RawEvent::DomainResolved(domain_hash, domain.source));
+
+			Ok(())
+		}
+
+		pub fn renew(origin, domain_hash: T::Hash) -> Result {
 			let sender = ensure_signed(origin)?;
-			let mut new_domain = Self::item(domain_hash.clone());
-			// Ensure the sender is the owner of the domain
-			ensure!(sender == Self::domain(domain_hash.clone()).owner, "You are not the owner of the domain");
-			// Set sale and put time to finalize the auction
-			new_domain.available = true;
-			new_domain.
-			// Set new domain in the Domain storage
-			
 
+			let mut new_domain = Self::domain(domain_hash.clone());
+			let now = <timestamp::Module<T>>::now();
+			// Ensure the sender is the source of the domain and its ttl is not expired
+			ensure!(new_domain.source == sender && now < new_domain.registered_date + new_domain.ttl, "You are either not the source of the domain or the domain is expired");
 			
+			// Extend domain TTL by a year 
+			new_domain.ttl += T::Moment::from(YEAR);		
+
+			// Try to withdraw price from the user account to renew the domain 
+			let _ = <balances::Module<T> as Currency<_>>::withdraw(&sender, new_domain.price, WithdrawReason::Reserve, ExistenceRequirement::KeepAlive)?;			
+
+
+			// mutate domain with new_domain struct in the Domain state
+			<Resolver<T>>::mutate(domain_hash.clone(), |domain| *domain = new_domain.clone());
+			//Self::deposit_event(RawEvent::DomainRenewal(domain_hash, sender, new_domain.registered_date + new_domain.ttl));
+
 
 			Ok(())
 		}
 
+		pub fn claim_auction(origin, domain_hash: T::Hash) -> Result {
+			let sender = ensure_signed(origin)?;
+			// Get domain and current time
+			let mut new_domain = Self::domain(domain_hash.clone());
+			let now = <timestamp::Module<T>>::now();
+			// Ensure the sender is the source of the domain or its ttl is expired
+			ensure!(sender == new_domain.source || new_domain.registered_date + new_domain.ttl < now, "You are neither the source of the domain or the claimer after the domain's TTL");
 
-		// Auction functions
-		pub fn new_bid(origin, domain_hash: T::Hash, bid: u32, current_time: u32) -> Result {
+			
+			// Set domain available for selling
+			new_domain.available = true;
+
+			// Set auction to be closed after 1 year using timestamp 
+			new_domain.auction_closed = now + T::Moment::from(YEAR);
+
+			// mutate domain with new_domain struct in the Domain state
+			<Resolver<T>>::mutate(domain_hash.clone(), |domain| *domain = new_domain.clone());
+			Self::deposit_event(RawEvent::NewAuction(sender, domain_hash, now, new_domain.auction_closed));
+
+
+			Ok(())
+		}
+
+		
+		pub fn new_bid(origin, domain_hash: T::Hash, bid: T::Balance) -> Result {
 			let sender = ensure_signed(origin)?;
 			// Ensure that
 			// Domain does already exist
-			ensure!(!<Resolver<T>>::exists(domain_hash), "The domain does not exist");
-			// The auction for the domain exists
-			ensure!(<Auction<T>>::exists(domain_hash), "The Auction for the domain does not exist");
-			let item = Self::item(domain_hash);
-			// The Auction is not finalized yet
-			ensure!(item.available && item.finalized_date > current_time, "The auction is not currently available");
+			ensure!(!<Resolver<T>>::exists(domain_hash), "The domain is not registered yet");
+			// Get domain and current time
+			let mut new_domain = Self::domain(domain_hash.clone());
+			let now = <timestamp::Module<T>>::now();
+			// The auction is available
+			ensure!(new_domain.available, "The auction for the domain is currently not available");
+			// The auction is not finalized
+			let now = <timestamp::Module<T>>::now();
+			ensure!(new_domain.auction_closed > now, "The bid for the auction is already finalized");
 			// The bid price is higher than the current highest bid
-			ensure!(item.highest_bid < bid, "Bid higher");
+			ensure!(new_domain.highest_bid < bid.clone(), "Bid higher");
+			
 
-			// transfer the token
+			// Set new domain data
+			new_domain.bidder = sender.clone();
+			new_domain.highest_bid = bid.clone();
+			
+			// mutate domain with new_domain struct in the Domain state
+			<Resolver<T>>::mutate(domain_hash.clone(), |domain| *domain = new_domain.clone());
+			Self::deposit_event(RawEvent::NewBid(sender, domain_hash, bid));
 
+			Ok(())
+		}
+
+		pub fn finalize_auction(origin, domain_hash: T::Hash) -> Result {
+			// Ensure that
+			// Domain does already exist
+			ensure!(!<Resolver<T>>::exists(domain_hash), "The domain is not registered yet");
+			// Get domain data
+			let mut new_domain = Self::domain(domain_hash);
+			let now = <timestamp::Module<T>>::now();
+			// The auction is available
+			ensure!(new_domain.available, "The auction for the domain is currently not available");
+			// The auction is finalized
+			ensure!(now > new_domain.auction_closed, "The auction has not been finalized yet");
+
+			// TODO: add transfer function for DOT
+			
+
+			// Set new domain data to bidder as source, highest_bid as price, and reinitialize rest of them 
+			new_domain.source = new_domain.bidder.clone();
+			new_domain.price = new_domain.highest_bid;
+			new_domain.available = false;
+			new_domain.ttl = T::Moment::from(YEAR);
+			new_domain.registered_date = now;
+			new_domain.available = false;
+			new_domain.highest_bid = T::Balance::from(0);
+			new_domain.auction_closed = T::Moment::from(0);
+
+			// mutate domain with new_domain struct in the Domain state
+			<Resolver<T>>::mutate(domain_hash.clone(), |domain| *domain = new_domain.clone());
+			Self::deposit_event(RawEvent::AuctionFinalized(new_domain.bidder, domain_hash, new_domain.highest_bid));
 
 			Ok(())
 		}
@@ -139,19 +221,20 @@ decl_module! {
 decl_event!(
 	pub enum Event<T> where AccountId = <T as system::Trait>::AccountId, <T as system::Trait>::Hash, <T as balances::Trait>::Balance, <T as timestamp::Trait>::Moment
  {
+		// Just a dummy event.
+		// Event `Something` is declared with a parameter of the type `u32` and `AccountId`
+		// To emit this event, we call the deposit funtion, from our runtime funtions
+		SomethingStored(u32, AccountId),
 		DomainRegistered(AccountId, Balance, Moment, Moment),
-		NewAuction(AccountId, Hash, Balance, Moment, Moment), 
+		NewAuction(AccountId, Hash, Moment, Moment), 
 		NewBid(AccountId, Hash, Balance),
 		AuctionFinalized(AccountId, Hash, Balance),
+		DomainResolved(Hash, AccountId),
+		DomainRenewal(Hash, AccountId, Moment),
 	}
 );
 
 impl<T: Trait> Module<T> {
-	fn new_domain(hash: T::Hash, domain: Domain<T::AccountId, T::Balance, T::Moment>, item: Item) -> Result {
-		<Resolver<T>>::insert(hash, domain);
-		<Auction<T>>::insert(hash, item);
-		Ok(())
-	}
 }
 
 
