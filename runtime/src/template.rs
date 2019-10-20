@@ -23,7 +23,7 @@ pub struct Domain<AccountId, Balance, Moment> {
 	registered_date: Moment
 	available: bool,
 	highest_bid: Balance,
-	auction_closes: Moment,
+	auction_closed: Moment,
 }
 
 
@@ -42,7 +42,7 @@ decl_storage! {
 		// Just a dummy storage item.
 		// Here we are declaring a StorageValue, `Something` as a Option<u32>
 		// `get(something)` is the default getter which returns either the stored `u32` or `None` if nothing stored
-		Something get(something): Option<u32>;
+		Domains get(total_domains): Option<u32>;
 		Resolver get(domain): map T::Hash => Domain<T::AccountId, T::Balance, T::Moment>;
 	}
 }
@@ -78,12 +78,21 @@ decl_module! {
 				highest_bid: T::Balance::from(0),
 				auction_closed: T::Moment::from(0)
 				};
-			let new_item = Item{highest_bid: INIT_BID, finalized_date: 0, reg_date: 0, available: false};
 
-			match Self::new_domain(domain_hash, new_domain, new_item) {
-				Ok(()) => Self::deposit_event(RawEvent::DomainRegistered(sender.clone(), init_price, ttl, reg_date)),
+			match <Domains<T>>::get() {
+				None => <Domains<T>>::set(0);
+				_ => ()
+			}
+
+			match <Resolver<T>>::insert(domain_hash.clone(), new_domain) {
+				Ok(()) => {
+					Self::domains
+					<Domains<T>>::set(Self::total_domains + 1);
+					Self::deposit_event(RawEvent::DomainRegistered(sender.clone(), init_price, ttl, reg_date))
+				},
 				Err(e) => ()
 			}
+
 				
 			Ok(())
 		}
