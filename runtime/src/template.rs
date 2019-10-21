@@ -134,8 +134,11 @@ decl_module! {
 
 		pub fn claim_auction(origin, domain_hash: T::Hash) -> Result {
 			let sender = ensure_signed(origin)?;
-			// Get domain and current time
-			let mut new_domain = Self::domain(domain_hash.clone());
+			// Ensure that
+			// Domain does already exist
+			ensure!(!<Resolver<T>>::exists(domain_hash), "The domain is not registered yet");
+			// But wait, get domain data and time
+ 			let mut new_domain = Self::domain(domain_hash.clone());
 			let now = <timestamp::Module<T>>::now();
 			// Ensure the sender is the source of the domain or its ttl is expired
 			ensure!(sender == new_domain.source || new_domain.registered_date + new_domain.ttl < now, "You are neither the source of the domain or the claimer after the domain's TTL");
@@ -161,9 +164,8 @@ decl_module! {
 			// Ensure that
 			// Domain does already exist
 			ensure!(!<Resolver<T>>::exists(domain_hash), "The domain is not registered yet");
-			// Get domain and current time
+			// But wait, get domain data
 			let mut new_domain = Self::domain(domain_hash.clone());
-			let now = <timestamp::Module<T>>::now();
 			// The auction is available
 			ensure!(new_domain.available, "The auction for the domain is currently not available");
 			// The auction is not finalized
@@ -188,7 +190,7 @@ decl_module! {
 			// Ensure that
 			// Domain does already exist
 			ensure!(!<Resolver<T>>::exists(domain_hash), "The domain is not registered yet");
-			// Get domain data
+			// But wait, get domain data and time
 			let mut new_domain = Self::domain(domain_hash);
 			let now = <timestamp::Module<T>>::now();
 			// The auction is available
@@ -288,6 +290,29 @@ mod tests {
 	impl Trait for Test  {
 		type Event = ();
 	}
+
+	impl timestamp::Trait for Test {
+		type Moment = u64;
+		type OnTimestampSet = ();
+        type MinimumPeriod = ();
+	}
+
+	impl balances::Trait for Test {
+		type Balance = u128;
+		type OnFreeBalanceZero = ();
+		type OnNewAccount = ();
+		type TransactionPayment = ();
+		type TransferPayment = ();
+		type DustRemoval = ();
+		type Event = ();
+		type ExistentialDeposit = ();
+		type TransferFee = ();
+		type CreationFee = ();
+		type TransactionBaseFee = ();
+		type TransactionByteFee = ();
+		type WeightToFee = ();
+	}
+	
 	type TemplateModule = Module<Test>;
 
 	// This function basically just builds a genesis storage key/value store according to
@@ -301,9 +326,23 @@ mod tests {
 		with_externalities(&mut new_test_ext(), || {
 			// Just a dummy test for the dummy funtion `do_something`
 			// calling the `do_something` function with a value 42
-			assert_ok!(TemplateModule::do_something(Origin::signed(1), 42));
+			//assert_ok!(TemplateModule::register_domain(""));
 			// asserting that the stored value is equal to what we stored
-			assert_eq!(TemplateModule::something(), Some(42));
+			assert_eq!(TemplateModule::total_domains(), 0);
 		});
 	}
+
+	#[test]
+	fn test_register_domain() {
+		with_externalities(&mut new_test_ext(), || {
+			let alice = 1u64;
+			let dummy_hash = H256([2; 32]);
+			assert_ok!(TemplateModule::register_domain(Origin::signed(alice), dummy_hash));
+			assert_eq!(TemplateModule::domain(dummy_hash).source, alice);
+		});
+	}
+
+	// TODO: Test other functions with features
+	// - Catching events after the event
+	// - Set balance of the test account
 }
