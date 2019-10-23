@@ -138,7 +138,7 @@ decl_module! {
 			let sender = ensure_signed(origin)?;
 			// Ensure that
 			// Domain does already exist
-			ensure!(<Resolver<T>>::exists(domain_hash), "The domain is not registered yet");
+			ensure!(<Resolver<T>>::exists(domain_hash), "The domain does not exist");
 			// But wait, get domain data and time
  			let mut new_domain = Self::domain(domain_hash.clone());
 			let now = <timestamp::Module<T>>::now();
@@ -165,7 +165,7 @@ decl_module! {
 			let sender = ensure_signed(origin)?;
 			// Ensure that
 			// Domain does already exist
-			ensure!(!<Resolver<T>>::exists(domain_hash), "The domain is not registered yet");
+			ensure!(<Resolver<T>>::exists(domain_hash), "The domain does not exist");
 			// But wait, get domain data
 			let mut new_domain = Self::domain(domain_hash.clone());
 			// The auction is available
@@ -189,19 +189,19 @@ decl_module! {
 		}
 
 		pub fn finalize_auction(origin, domain_hash: T::Hash) -> Result {
+			let sender = ensure_signed(origin)?; 
 			// Ensure that
 			// Domain does already exist
-			ensure!(!<Resolver<T>>::exists(domain_hash), "The domain is not registered yet");
+			ensure!(<Resolver<T>>::exists(domain_hash), "The domain is not registered yet");
 			// But wait, get domain data and time
 			let mut new_domain = Self::domain(domain_hash);
 			let now = <timestamp::Module<T>>::now();
 			// The auction is available
 			ensure!(new_domain.available, "The auction for the domain is currently not available");
-			// The auction is finalized
-			ensure!(now > new_domain.auction_closed, "The auction has not been finalized yet");
+			// The auction is finalized or the source wants to finalize(test)
+			ensure!(now > new_domain.auction_closed || sender == new_domain.source, "The auction has not been finalized yet");
 
-			// TODO: add transfer function for DOT
-			let <balances::Module<T> as Currency<_>>::transfer(origin, new_domain.source, new_domain.highest_bid);
+			let _ = <balances::Module<T> as Currency<_>>::transfer(&new_domain.bidder, &new_domain.source, new_domain.highest_bid);
 
 			// Set new domain data to bidder as source, highest_bid as price, and reinitialize rest of them 
 			new_domain.source = new_domain.bidder.clone();
