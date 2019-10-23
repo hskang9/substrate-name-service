@@ -13,8 +13,13 @@ use support::traits::{Currency, WithdrawReason, ExistenceRequirement};
 use system::{ensure_signed};
 use codec::{Encode, Decode};
 
-const INIT_BID: u32 = 1000;
-const YEAR: u32 = 31556926;
+// TODO: the Balance type is configurable in lib.rs with type Balance = u128;, but This also needs a Converter with fixed type in my opinion
+const INIT_BID: u32 = 1000; // 1 nano DEV(0.001 DEV)
+// The timestamp inherent type is u64 and Substrate calculates as milliseconds, but From for all generic types supports u8, u16, u32 in SimpleArithmetic trait, saying that those are not fallible.
+// Therefore, use TryFrom for big integers
+use core::convert::TryFrom;
+// YEAR as milliseconds
+const YEAR: u64 =  31556926 * 1000;
 
 #[derive(Encode, Decode, Default, Clone, PartialEq)]
 pub struct Domain<AccountId, Balance, Moment> {
@@ -42,7 +47,7 @@ pub trait Trait: system::Trait + balances::Trait + timestamp::Trait {
 
 // This module's storage items.
 decl_storage! {
-	trait Store for Module<T: Trait> as NameStorage {
+	trait Store for Module<T: Trait> as NamingServiceModule {
 
 		
 		// Just a dummy storage item.
@@ -61,13 +66,13 @@ decl_module! {
 		// this is needed only if you are using events in your module
 		fn deposit_event() = default;
 		
-		// Register domain with 1 year ttl(31556926) and 1 DOT base price
+		// Register domain with 1 year ttl(31556926000 milliseconds) and 1 nano DEV base price
 		pub fn register_domain(origin, domain_hash: T::Hash) -> Result {
 			let sender = ensure_signed(origin)?;
 			ensure!(!<Resolver<T>>::exists(domain_hash), "The domain already exists");
 			// Convert numbers into generic types which codec supports
 			// Generic types can process arithmetics and comparisons just as other rust variables
-			let ttl = T::Moment::from(YEAR);
+			let ttl = T::Moment::try_from(YEAR as usize); 
 			let init_price = T::Balance::from(INIT_BID); 
 			let reg_date: T::Moment = <timestamp::Module<T>>::now();
 			
@@ -84,7 +89,7 @@ decl_module! {
 				available: false,
 				highest_bid: T::Balance::from(0),
 				bidder: sender.clone(),
-				auction_closed: T::Moment::from(0)
+				auction_closed: T::Moment::try_from(0 as usize)
 				};
 
 			// Insert new domain to the Resolver state
@@ -119,8 +124,8 @@ decl_module! {
 			// Ensure the sender is the source of the domain and its ttl is not expired
 			ensure!(new_domain.source == sender && now < new_domain.registered_date + new_domain.ttl, "You are either not the source of the domain or the domain is expired");
 			
-			// Extend domain TTL by a year 
-			new_domain.ttl += T::Moment::from(YEAR);		
+			// Extend domain TTL by a year
+			new_domain.ttl += T::Moment::try_from(YEAR as usize);		
 
 			// Try to withdraw price from the user account to renew the domain 
 			let _ = <balances::Module<T> as Currency<_>>::withdraw(&sender, new_domain.price, WithdrawReason::Reserve, ExistenceRequirement::KeepAlive)?;			
@@ -149,8 +154,8 @@ decl_module! {
 			// Set domain available for selling
 			new_domain.available = true;
 
-			// Set auction to be closed after 1 hour(60* 60 seconds) using timestamp 
-			new_domain.auction_closed = now + T::Moment::from(3600);
+			// Set auction to be closed after 1 hour(60* 60 seconds) * 1000(milliseconds conversion) using timestamp 
+			new_domain.auction_closed = now + T::Moment::try_from(3600 * 1000 as usize);
 
 			// mutate domain with new_domain struct in the Domain state
 			<Resolver<T>>::mutate(domain_hash.clone(), |domain| *domain = new_domain.clone());
@@ -208,11 +213,11 @@ decl_module! {
 			new_domain.source = new_domain.bidder.clone();
 			new_domain.price = new_domain.highest_bid;
 			new_domain.available = false;
-			new_domain.ttl = T::Moment::from(YEAR);
+			new_domain.ttl = T::Moment::try_from(YEAR as usize);
 			new_domain.registered_date = now;
 			new_domain.available = false;
 			new_domain.highest_bid = T::Balance::from(0);
-			new_domain.auction_closed = T::Moment::from(0);
+			new_domain.auction_closed = T::Moment::try_from(0 as usize);
 
 			// mutate domain with new_domain struct in the Domain state
 			<Resolver<T>>::mutate(domain_hash.clone(), |domain| *domain = new_domain.clone());
