@@ -231,10 +231,6 @@ decl_module! {
 decl_event!(
 	pub enum Event<T> where AccountId = <T as system::Trait>::AccountId, <T as system::Trait>::Hash, <T as balances::Trait>::Balance, <T as timestamp::Trait>::Moment
  {
-		// Just a dummy event.
-		// Event `Something` is declared with a parameter of the type `u32` and `AccountId`
-		// To emit this event, we call the deposit funtion, from our runtime funtions
-		SomethingStored(u32, AccountId),
 		DomainRegistered(AccountId, Balance, Moment, Moment),
 		NewAuction(AccountId, Hash, Moment, Moment), 
 		NewBid(AccountId, Hash, Balance),
