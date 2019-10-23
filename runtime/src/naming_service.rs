@@ -12,14 +12,17 @@ use support::{decl_module, decl_storage, decl_event, dispatch::Result, ensure};
 use support::traits::{Currency, WithdrawReason, ExistenceRequirement};
 use system::{ensure_signed};
 use codec::{Encode, Decode};
+use rstd::vec::Vec;
 
 // TODO: the Balance type is configurable in lib.rs with type Balance = u128;, but This also needs a Converter with fixed type in my opinion
-const INIT_BID: u32 = 1000; // 1 nano DEV(0.001 DEV)
-// The timestamp inherent type is u64 and Substrate calculates as milliseconds, but From for all generic types supports u8, u16, u32 in SimpleArithmetic trait, saying that those are not fallible.
+const INIT_BID: u32 = 100000000;
+// The timestamp inherent type is u64 and Substrate calculates as milliseconds, but `From` for all generic types supports u8, u16, u32 in SimpleArithmetic trait, saying that those are not fallible.
 // Therefore, use TryFrom for big integers
-use core::convert::TryFrom;
-// YEAR as milliseconds
-const YEAR: u64 =  31556926 * 1000;
+// TryFrom does not support unwrap() in its result so make function for conversion
+// use rstd::convert::TryFrom;
+// FIXME: TryFrom causes a bug for inconsistency in Storage hash, actually type bigger than u32 causes an error
+// 1 year in seconds
+const YEAR: u32 =  31556952;
 
 #[derive(Encode, Decode, Default, Clone, PartialEq)]
 pub struct Domain<AccountId, Balance, Moment> {
@@ -42,6 +45,7 @@ pub struct Item {
 pub trait Trait: system::Trait + balances::Trait + timestamp::Trait {
 	/// The overarching event type.
 	type Event: From<Event<Self>> + Into<<Self as system::Trait>::Event>;
+	
 }
 
 
@@ -66,14 +70,18 @@ decl_module! {
 		// this is needed only if you are using events in your module
 		fn deposit_event() = default;
 		
+		
+		
 		// Register domain with 1 year ttl(31556926000 milliseconds) and 1 nano DEV base price
 		pub fn register_domain(origin, domain_hash: T::Hash) -> Result {
 			let sender = ensure_signed(origin)?;
 			ensure!(!<Resolver<T>>::exists(domain_hash), "The domain already exists");
 			// Convert numbers into generic types which codec supports
 			// Generic types can process arithmetics and comparisons just as other rust variables
-			let ttl = T::Moment::try_from(YEAR as usize); 
-			let init_price = T::Balance::from(INIT_BID); 
+			let ttl = Self::to_milli(T::Moment::from(YEAR));
+			ensure!(ttl != T::Moment::from(1), "Conversion Error"); 
+			let init_price = Self::to_balance(1, &b"one".to_vec()[..]);
+			ensure!(init_price != T::Balance::from(1), "Conversion Error"); 
 			let reg_date: T::Moment = <timestamp::Module<T>>::now();
 			
 			// Try to withdraw registration fee from the user without killing the account
@@ -89,7 +97,7 @@ decl_module! {
 				available: false,
 				highest_bid: T::Balance::from(0),
 				bidder: sender.clone(),
-				auction_closed: T::Moment::try_from(0 as usize)
+				auction_closed: T::Moment::from(0)
 				};
 
 			// Insert new domain to the Resolver state
@@ -125,7 +133,9 @@ decl_module! {
 			ensure!(new_domain.source == sender && now < new_domain.registered_date + new_domain.ttl, "You are either not the source of the domain or the domain is expired");
 			
 			// Extend domain TTL by a year
-			new_domain.ttl += T::Moment::try_from(YEAR as usize);		
+			let ttl = Self::to_milli(T::Moment::from(YEAR));
+			ensure!(ttl != T::Moment::from(1), "Conversion Error");
+			new_domain.ttl += ttl;		
 
 			// Try to withdraw price from the user account to renew the domain 
 			let _ = <balances::Module<T> as Currency<_>>::withdraw(&sender, new_domain.price, WithdrawReason::Reserve, ExistenceRequirement::KeepAlive)?;			
@@ -155,7 +165,9 @@ decl_module! {
 			new_domain.available = true;
 
 			// Set auction to be closed after 1 hour(60* 60 seconds) * 1000(milliseconds conversion) using timestamp 
-			new_domain.auction_closed = now + T::Moment::try_from(3600 * 1000 as usize);
+			let converted = Self::to_milli(T::Moment::from(3600));
+			ensure!(converted != T::Moment::from(1), "Conversion error");
+			new_domain.auction_closed = now + converted;
 
 			// mutate domain with new_domain struct in the Domain state
 			<Resolver<T>>::mutate(domain_hash.clone(), |domain| *domain = new_domain.clone());
@@ -213,11 +225,13 @@ decl_module! {
 			new_domain.source = new_domain.bidder.clone();
 			new_domain.price = new_domain.highest_bid;
 			new_domain.available = false;
-			new_domain.ttl = T::Moment::try_from(YEAR as usize);
+			let ttl = Self::to_milli(T::Moment::from(YEAR));
+			ensure!(ttl != T::Moment::from(1), "Conversion error");
+			new_domain.ttl = ttl;
 			new_domain.registered_date = now;
 			new_domain.available = false;
 			new_domain.highest_bid = T::Balance::from(0);
-			new_domain.auction_closed = T::Moment::try_from(0 as usize);
+			new_domain.auction_closed = T::Moment::from(0);
 
 			// mutate domain with new_domain struct in the Domain state
 			<Resolver<T>>::mutate(domain_hash.clone(), |domain| *domain = new_domain.clone());
@@ -240,7 +254,40 @@ decl_event!(
 	}
 );
 
+// Module's function
 impl<T: Trait> Module<T> {
+
+	pub fn to_milli(m: T::Moment) -> T::Moment {
+		m * T::Moment::from(1000)
+	}
+
+	pub fn to_balance(u: u32, digit: &[u8]) -> T::Balance {
+		let power = |u: u32, p: u32| -> T::Balance {
+			let mut base = T::Balance::from(u);
+			for _i in 0..p { 
+				base *= T::Balance::from(10)
+			}
+			return base;
+		};
+		let result = match digit  {
+			b"femto" => T::Balance::from(u),
+			b"nano" =>  power(u, 3),
+			b"micro" => power(u, 6),
+			b"milli" => power(u, 9),
+			b"one" => power(u,12),
+			b"kilo" => power(u, 15),
+			b"mega" => power(u, 18),
+			b"giga" => power(u, 21),
+			b"tera" => power(u, 24),
+			b"peta" => power(u, 27),
+			b"exa" => power(u, 30),
+			b"zetta" => power(u, 33),
+			b"yotta" => power(u, 36),
+			_ => T::Balance::from(u)
+		}; 
+		result 
+	}
+
 }
 
 
