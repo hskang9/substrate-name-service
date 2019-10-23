@@ -149,8 +149,8 @@ decl_module! {
 			// Set domain available for selling
 			new_domain.available = true;
 
-			// Set auction to be closed after 1 year using timestamp 
-			new_domain.auction_closed = now + T::Moment::from(YEAR);
+			// Set auction to be closed after 1 hour(60* 60 seconds) using timestamp 
+			new_domain.auction_closed = now + T::Moment::from(3600);
 
 			// mutate domain with new_domain struct in the Domain state
 			<Resolver<T>>::mutate(domain_hash.clone(), |domain| *domain = new_domain.clone());
@@ -198,8 +198,9 @@ decl_module! {
 			let now = <timestamp::Module<T>>::now();
 			// The auction is available
 			ensure!(new_domain.available, "The auction for the domain is currently not available");
-			// The auction is finalized or the source wants to finalize(test)
-			ensure!(now > new_domain.auction_closed || sender == new_domain.source, "The auction has not been finalized yet");
+			// The auction is finalized or the source wants to finalize the auction(test)
+			// TEST: If you want to test auction functions without waiting for 1 hour, just add '|| sender == new_domain.source in ensure! macro
+			ensure!(now > new_domain.auction_closed, "The auction has not been finalized yet");
 
 			let _ = <balances::Module<T> as Currency<_>>::transfer(&new_domain.bidder, &new_domain.source, new_domain.highest_bid);
 
@@ -315,7 +316,7 @@ mod tests {
 		type WeightToFee = ();
 	}
 	
-	type TemplateModule = Module<Test>;
+	type NamingServiceModule = Module<Test>;
 
 	// This function basically just builds a genesis storage key/value store according to
 	// our desired mockup.
@@ -330,7 +331,7 @@ mod tests {
 			// calling the `do_something` function with a value 42
 			//assert_ok!(TemplateModule::register_domain(""));
 			// asserting that the stored value is equal to what we stored
-			assert_eq!(TemplateModule::total_domains(), 0);
+			assert_eq!(NamingServiceModule::total_domains(), 0);
 		});
 	}
 
@@ -339,8 +340,8 @@ mod tests {
 		with_externalities(&mut new_test_ext(), || {
 			let alice = 1u64;
 			let dummy_hash = H256([2; 32]);
-			assert_ok!(TemplateModule::register_domain(Origin::signed(alice), dummy_hash));
-			assert_eq!(TemplateModule::domain(dummy_hash).source, alice);
+			assert_ok!(NamingServiceModule::register_domain(Origin::signed(alice), dummy_hash));
+			assert_eq!(NamingServiceModule::domain(dummy_hash).source, alice);
 		});
 	}
 
@@ -353,8 +354,8 @@ mod tests {
 		with_externalities(&mut new_test_ext(), || {
 			let alice = 1u64;
 			let dummy_hash = H256([2; 32]);
-			assert_ok!(TemplateModule::register_domain(Origin::signed(alice), dummy_hash));
-			assert_eq!(TemplateModule::domain(dummy_hash).source, alice);
+			assert_ok!(NamingServiceModule::register_domain(Origin::signed(alice), dummy_hash));
+			assert_eq!(NamingServiceModule::domain(dummy_hash).source, alice);
 		});
 	}
 }
