@@ -71,7 +71,8 @@ decl_module! {
 			let init_price = T::Balance::from(INIT_BID); 
 			let reg_date: T::Moment = <timestamp::Module<T>>::now();
 			
-			// Try to withdraw price from the user account to register domain 
+			// Try to withdraw registration fee from the user without killing the account
+			// TODO: make validator pot for them to decide what to do with registration fees
 			let _ = <balances::Module<T> as Currency<_>>::withdraw(&sender, init_price, WithdrawReason::Reserve, ExistenceRequirement::KeepAlive)?;			
 
 			// make new Domain struct
@@ -103,6 +104,7 @@ decl_module! {
 		}
 
 		pub fn resolve(origin, domain_hash: T::Hash) -> Result {
+			ensure!(<Resolver<T>>::exists(domain_hash), "The domain does not exist");
 			let domain = Self::domain(domain_hash);
 			Self::deposit_event(RawEvent::DomainResolved(domain_hash, domain.source));
 
@@ -126,7 +128,7 @@ decl_module! {
 
 			// mutate domain with new_domain struct in the Domain state
 			<Resolver<T>>::mutate(domain_hash.clone(), |domain| *domain = new_domain.clone());
-			//Self::deposit_event(RawEvent::DomainRenewal(domain_hash, sender, new_domain.registered_date + new_domain.ttl));
+			Self::deposit_event(RawEvent::DomainRenewal(domain_hash, sender, new_domain.registered_date + new_domain.ttl));
 
 
 			Ok(())
@@ -136,7 +138,7 @@ decl_module! {
 			let sender = ensure_signed(origin)?;
 			// Ensure that
 			// Domain does already exist
-			ensure!(!<Resolver<T>>::exists(domain_hash), "The domain is not registered yet");
+			ensure!(<Resolver<T>>::exists(domain_hash), "The domain is not registered yet");
 			// But wait, get domain data and time
  			let mut new_domain = Self::domain(domain_hash.clone());
 			let now = <timestamp::Module<T>>::now();
@@ -199,7 +201,7 @@ decl_module! {
 			ensure!(now > new_domain.auction_closed, "The auction has not been finalized yet");
 
 			// TODO: add transfer function for DOT
-			
+			let <balances::Module<T> as Currency<_>>::transfer(origin, new_domain.source, new_domain.highest_bid);
 
 			// Set new domain data to bidder as source, highest_bid as price, and reinitialize rest of them 
 			new_domain.source = new_domain.bidder.clone();
@@ -345,4 +347,14 @@ mod tests {
 	// TODO: Test other functions with features
 	// - Catching events after the event
 	// - Set balance of the test account
+
+	#[test]
+	fn test_claim_auction() {
+		with_externalities(&mut new_test_ext(), || {
+			let alice = 1u64;
+			let dummy_hash = H256([2; 32]);
+			assert_ok!(TemplateModule::register_domain(Origin::signed(alice), dummy_hash));
+			assert_eq!(TemplateModule::domain(dummy_hash).source, alice);
+		});
+	}
 }
