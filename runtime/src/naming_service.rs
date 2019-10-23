@@ -12,10 +12,8 @@ use support::{decl_module, decl_storage, decl_event, dispatch::Result, ensure};
 use support::traits::{Currency, WithdrawReason, ExistenceRequirement};
 use system::{ensure_signed};
 use codec::{Encode, Decode};
-use rstd::vec::Vec;
 
 // TODO: the Balance type is configurable in lib.rs with type Balance = u128;, but This also needs a Converter with fixed type in my opinion
-const INIT_BID: u32 = 100000000;
 // The timestamp inherent type is u64 and Substrate calculates as milliseconds, but `From` for all generic types supports u8, u16, u32 in SimpleArithmetic trait, saying that those are not fallible.
 // Therefore, use TryFrom for big integers
 // TryFrom does not support unwrap() in its result so make function for conversion
@@ -80,7 +78,7 @@ decl_module! {
 			// Generic types can process arithmetics and comparisons just as other rust variables
 			let ttl = Self::to_milli(T::Moment::from(YEAR));
 			ensure!(ttl != T::Moment::from(1), "Conversion Error"); 
-			let init_price = Self::to_balance(1, &b"one".to_vec()[..]);
+			let init_price = Self::to_balance(1, &b"milli".to_vec()[..]);
 			ensure!(init_price != T::Balance::from(1), "Conversion Error"); 
 			let reg_date: T::Moment = <timestamp::Module<T>>::now();
 			
@@ -261,6 +259,7 @@ impl<T: Trait> Module<T> {
 		m * T::Moment::from(1000)
 	}
 
+	// TODO: Add this to <balances::Module<T>> and test with u128
 	pub fn to_balance(u: u32, digit: &[u8]) -> T::Balance {
 		let power = |u: u32, p: u32| -> T::Balance {
 			let mut base = T::Balance::from(u);
