@@ -46,7 +46,9 @@ pub trait Trait: system::Trait + balances::Trait + timestamp::Trait {
 // This module's storage items.
 decl_storage! {
 	trait Store for Module<T: Trait> as NamingServiceModule {
+		/// Total number of domains
 		Domains get(total_domains): u64;
+		/// Hash is the blake2b hash of the domain name
 		Resolver get(domain): map T::Hash => Domain<T::AccountId, T::Balance, T::Moment>;
 	}
 }
