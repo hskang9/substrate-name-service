@@ -13,12 +13,12 @@ use support::traits::{Currency, WithdrawReason, ExistenceRequirement};
 use system::{ensure_signed};
 use codec::{Encode, Decode};
 
-// TODO: the Balance type is configurable in lib.rs with type Balance = u128;, but This also needs a Converter with fixed type in my opinion
 // The timestamp inherent type is u64 and Substrate calculates as milliseconds, but `From` for all generic types supports u8, u16, u32 in SimpleArithmetic trait, saying that those are not fallible.
 // Therefore, use TryFrom for big integers
-// TryFrom does not support unwrap() in its result so make function for conversion
-// use rstd::convert::TryFrom;
+// FIXME: TryFrom does not support unwrap() in its result so make function for conversion
+// use core::convert::TryFrom;
 // FIXME: TryFrom causes a bug for inconsistency in Storage hash, actually type bigger than u32 causes an error
+
 // 1 year in seconds
 const YEAR: u32 =  31556952;
 
@@ -65,7 +65,7 @@ decl_module! {
 		
 		
 		
-		// Register domain with 1 year ttl(31556926000 milliseconds) and 1 nano DEV base price
+		// Register domain with 1 year ttl(31556926000 milliseconds) and 1 milli DEV(0.001 DEV) base price
 		pub fn register_domain(origin, domain_hash: T::Hash) -> Result {
 			let sender = ensure_signed(origin)?;
 			ensure!(!<Resolver<T>>::exists(domain_hash), "The domain already exists");
@@ -78,7 +78,6 @@ decl_module! {
 			let reg_date: T::Moment = <timestamp::Module<T>>::now();
 			
 			// Try to withdraw registration fee from the user without killing the account
-			// TODO: make validator pot for them to decide what to do with registration fees
 			let _ = <balances::Module<T> as Currency<_>>::withdraw(&sender, init_price, WithdrawReason::Reserve, ExistenceRequirement::KeepAlive)?;			
 
 			// make new Domain struct
