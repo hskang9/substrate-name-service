@@ -49,6 +49,11 @@ decl_storage! {
 		/// Total number of domains
 		Domains get(total_domains): u64;
 		/// Hash is the blake2b hash of the domain name
+		/// In Javascript, use @polkadot/util-crypto's blake2AsHex("<domain name you want>" 256) and put the hexstring in the polkadot.js apps param.
+		/// Or use blake2js with this example.
+		/// > var blake = require('blakejs');
+		/// > console.log(blake.blake2sHex('hyungsukkang.dot', 256))
+		/// fecf3628563657233c1d29fd6589bcb792d1ce7611892490c3dd5857647006d7
 		Resolver get(domain): map T::Hash => Domain<T::AccountId, T::Balance, T::Moment>;
 	}
 }
