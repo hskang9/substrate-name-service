@@ -34,10 +34,6 @@ pub struct Domain<AccountId, Balance, Moment> {
 	auction_closed: Moment,
 }
 
-#[derive(Encode, Decode, Default, Clone, PartialEq)]
-pub struct Item {
-	
-}
 
 /// The module's configuration trait.
 pub trait Trait: system::Trait + balances::Trait + timestamp::Trait {
@@ -73,7 +69,7 @@ decl_module! {
 			// Generic types can process arithmetics and comparisons just as other rust variables
 			let ttl = Self::to_milli(T::Moment::from(YEAR));
 			ensure!(ttl != T::Moment::from(1), "Conversion Error"); 
-			let init_price = Self::to_balance(1, &b"milli".to_vec()[..]);
+			let init_price = Self::to_balance(1, "milli");
 			ensure!(init_price != T::Balance::from(1), "Conversion Error"); 
 			let reg_date: T::Moment = <timestamp::Module<T>>::now();
 			
@@ -254,7 +250,7 @@ impl<T: Trait> Module<T> {
 	}
 
 	// TODO: Add this to <balances::Module<T>> and test with u128
-	pub fn to_balance(u: u32, digit: &[u8]) -> T::Balance {
+	pub fn to_balance(u: u32, digit: &str) -> T::Balance {
 		let power = |u: u32, p: u32| -> T::Balance {
 			let mut base = T::Balance::from(u);
 			for _i in 0..p { 
@@ -263,19 +259,19 @@ impl<T: Trait> Module<T> {
 			return base;
 		};
 		let result = match digit  {
-			b"femto" => T::Balance::from(u),
-			b"nano" =>  power(u, 3),
-			b"micro" => power(u, 6),
-			b"milli" => power(u, 9),
-			b"one" => power(u,12),
-			b"kilo" => power(u, 15),
-			b"mega" => power(u, 18),
-			b"giga" => power(u, 21),
-			b"tera" => power(u, 24),
-			b"peta" => power(u, 27),
-			b"exa" => power(u, 30),
-			b"zetta" => power(u, 33),
-			b"yotta" => power(u, 36),
+			"femto" => T::Balance::from(u),
+			"nano" =>  power(u, 3),
+			"micro" => power(u, 6),
+			"milli" => power(u, 9),
+			"one" => power(u,12),
+			"kilo" => power(u, 15),
+			"mega" => power(u, 18),
+			"giga" => power(u, 21),
+			"tera" => power(u, 24),
+			"peta" => power(u, 27),
+			"exa" => power(u, 30),
+			"zetta" => power(u, 33),
+			"yotta" => power(u, 36),
 			_ => T::Balance::from(u)
 		}; 
 		result 
