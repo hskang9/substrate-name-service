@@ -112,7 +112,7 @@ decl_module! {
 		pub fn resolve(origin, domain_hash: T::Hash) -> Result {
 			ensure!(<Resolver<T>>::exists(domain_hash), "The domain does not exist");
 			let domain = Self::domain(domain_hash);
-			Self::deposit_event(RawEvent::DomainResolved(domain_hash, domain.source));
+			Self::deposit_event(RawEvent::DomainResolved(domain_hash, domain.source, domain.price, domain.available, domain.highest_bid, domain.bidder, domain.auction_closed));
 
 			Ok(())
 		}
@@ -207,7 +207,7 @@ decl_module! {
 			// The auction is available
 			ensure!(new_domain.available, "The auction for the domain is currently not available");
 			// The auction is finalized or the source wants to finalize the auction(test)
-			// TEST: If you want to test auction functions without waiting for 1 hour, just add '|| sender == new_domain.source in ensure! macro
+			// TEST: If you want to test auction finalization without waiting for 1 hour, just add '|| sender == new_domain.source in ensure! macro
 			ensure!(now > new_domain.auction_closed, "The auction has not been finalized yet");
 
 			let _ = <balances::Module<T> as Currency<_>>::transfer(&new_domain.bidder, &new_domain.source, new_domain.highest_bid);
@@ -239,7 +239,7 @@ decl_event!(
 		NewAuction(AccountId, Hash, Moment, Moment), 
 		NewBid(AccountId, Hash, Balance),
 		AuctionFinalized(AccountId, Hash, Balance),
-		DomainResolved(Hash, AccountId),
+		DomainResolved(Hash, AccountId, Balance, bool, Balance, AccountId, Moment),
 		DomainRenewal(Hash, AccountId, Moment),
 	}
 );
