@@ -53,7 +53,7 @@ decl_storage! {
 		/// In Javascript, use @polkadot/util-crypto's blake2AsHex("<domain name you want>" 256) and put the hexstring in the polkadot.js apps param.
 		/// Or use blakejs with this example.
 		/// > var blake = require('blakejs');
-		/// > console.log(blake.blake2sHex('hyungsukkang.dot', 256))
+		/// > console.log(blake.blake2sHex('hyungsukkang.dot'))
 		/// fecf3628563657233c1d29fd6589bcb792d1ce7611892490c3dd5857647006d7
 		Resolver get(domain): map T::Hash => Domain<T::AccountId, T::Balance, T::Moment>;
 	}
@@ -67,15 +67,10 @@ decl_module! {
 		// this is needed only if you are using events in your module
 		fn deposit_event() = default;
 		
-		fn offchain_worker(_now: T::BlockNumber) {
-			#[cfg(feature = "std")]
-			Self::validate_format();
-		}
 		
 		// Register domain with 1 year ttl(31556926000 milliseconds) and 1 milli DEV(0.001 DEV) base price
-		pub fn register_domain(origin, domain_hash: T::Hash, test: Vec<u8>) -> Result {
+		pub fn register_domain(origin, domain_hash: T::Hash) -> Result {
 			let sender = ensure_signed(origin)?;
-			ensure!(Self::validate_format(test) == true, "Test failed");
 			ensure!(!<Resolver<T>>::exists(domain_hash), "The domain already exists");
 			// Convert numbers into generic types which codec supports
 			// Generic types can process arithmetics and comparisons just as other rust variables
