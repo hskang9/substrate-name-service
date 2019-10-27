@@ -12,6 +12,7 @@ use support::{decl_module, decl_storage, decl_event, dispatch::Result, ensure};
 use support::traits::{Currency, WithdrawReason, ExistenceRequirement};
 use system::{ensure_signed};
 use codec::{Encode, Decode};
+use rstd::prelude::*;
 
 // The timestamp inherent type is u64 and Substrate calculates as milliseconds, but `From` for all generic types supports u8, u16, u32 in SimpleArithmetic trait, saying that those are not fallible.
 // Therefore, use TryFrom for big integers
@@ -50,7 +51,7 @@ decl_storage! {
 		Domains get(total_domains): u64;
 		/// Hash is the blake2b hash of the domain name
 		/// In Javascript, use @polkadot/util-crypto's blake2AsHex("<domain name you want>" 256) and put the hexstring in the polkadot.js apps param.
-		/// Or use blake2js with this example.
+		/// Or use blakejs with this example.
 		/// > var blake = require('blakejs');
 		/// > console.log(blake.blake2sHex('hyungsukkang.dot', 256))
 		/// fecf3628563657233c1d29fd6589bcb792d1ce7611892490c3dd5857647006d7
@@ -66,18 +67,20 @@ decl_module! {
 		// this is needed only if you are using events in your module
 		fn deposit_event() = default;
 		
-		
+		fn offchain_worker(_now: T::BlockNumber) {
+			#[cfg(feature = "std")]
+			Self::validate_format();
+		}
 		
 		// Register domain with 1 year ttl(31556926000 milliseconds) and 1 milli DEV(0.001 DEV) base price
-		pub fn register_domain(origin, domain_hash: T::Hash) -> Result {
+		pub fn register_domain(origin, domain_hash: T::Hash, test: Vec<u8>) -> Result {
 			let sender = ensure_signed(origin)?;
+			ensure!(Self::validate_format(test) == true, "Test failed");
 			ensure!(!<Resolver<T>>::exists(domain_hash), "The domain already exists");
 			// Convert numbers into generic types which codec supports
 			// Generic types can process arithmetics and comparisons just as other rust variables
 			let ttl = Self::to_milli(T::Moment::from(YEAR));
-			ensure!(ttl != T::Moment::from(1), "Conversion Error"); 
 			let init_price = Self::to_balance(1, "milli");
-			ensure!(init_price != T::Balance::from(1), "Conversion Error"); 
 			let reg_date: T::Moment = <timestamp::Module<T>>::now();
 			
 			// Try to withdraw registration fee from the user without killing the account
@@ -129,7 +132,6 @@ decl_module! {
 			
 			// Extend domain TTL by a year
 			let ttl = Self::to_milli(T::Moment::from(YEAR));
-			ensure!(ttl != T::Moment::from(1), "Conversion Error");
 			new_domain.ttl += ttl;		
 
 			// Try to withdraw price from the user account to renew the domain 
@@ -161,7 +163,6 @@ decl_module! {
 
 			// Set auction to be closed after 1 hour(60* 60 seconds) * 1000(milliseconds conversion) using timestamp 
 			let converted = Self::to_milli(T::Moment::from(3600));
-			ensure!(converted != T::Moment::from(1), "Conversion error");
 			new_domain.auction_closed = now + converted;
 
 			// mutate domain with new_domain struct in the Domain state
@@ -221,7 +222,6 @@ decl_module! {
 			new_domain.price = new_domain.highest_bid;
 			new_domain.available = false;
 			let ttl = Self::to_milli(T::Moment::from(YEAR));
-			ensure!(ttl != T::Moment::from(1), "Conversion error");
 			new_domain.ttl = ttl;
 			new_domain.registered_date = now;
 			new_domain.available = false;
