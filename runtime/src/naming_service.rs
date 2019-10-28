@@ -17,11 +17,12 @@ use rstd::prelude::*;
 // The timestamp inherent type is u64 and Substrate calculates as milliseconds, but `From` for all generic types supports u8, u16, u32 in SimpleArithmetic trait, saying that those are not fallible.
 // Therefore, use TryFrom for big integers
 // FIXME: TryFrom does not support unwrap() in its result so make function for conversion
-// use core::convert::TryFrom;
+use core::convert::TryFrom;
 // FIXME: TryFrom causes a bug for inconsistency in Storage hash, actually type bigger than u32 causes an error
 
 // 1 year in seconds
 const YEAR: u32 =  31556952;
+const INIT_BID: u64 = 100000000000000000;
 
 #[derive(Encode, Decode, Default, Clone, PartialEq)]
 pub struct Domain<AccountId, Balance, Moment> {
@@ -75,7 +76,10 @@ decl_module! {
 			// Convert numbers into generic types which codec supports
 			// Generic types can process arithmetics and comparisons just as other rust variables
 			let ttl = Self::to_milli(T::Moment::from(YEAR));
-			let init_price = Self::to_balance(1, "milli");
+			let init_price = match T::Balance::try_from(INIT_BID as usize) {
+				Ok(v) => v,
+				Err(e) => T::Balance::from(1)
+			};
 			let reg_date: T::Moment = <timestamp::Module<T>>::now();
 			
 			// Try to withdraw registration fee from the user without killing the account
@@ -207,8 +211,8 @@ decl_module! {
 			// The auction is available
 			ensure!(new_domain.available, "The auction for the domain is currently not available");
 			// The auction is finalized or the source wants to finalize the auction(test)
-			// TEST: If you want to test auction finalization without waiting for 1 hour, just add '|| sender == new_domain.source in ensure! macro
-			ensure!(now > new_domain.auction_closed, "The auction has not been finalized yet");
+			// TEST: If you want to test auction finalization without waiting for 1 hour, just add '|| sender == new_domain.source in ensure! macro below
+			ensure!(now > new_domain.auction_closed || sender == new_domain.source, "The auction has not been finalized yet");
 
 			let _ = <balances::Module<T> as Currency<_>>::transfer(&new_domain.bidder, &new_domain.source, new_domain.highest_bid);
 
