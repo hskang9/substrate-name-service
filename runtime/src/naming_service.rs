@@ -22,6 +22,7 @@ use rstd::prelude::*;
 
 // 1 year in seconds
 const YEAR: u32 =  31556952;
+pub type IPV4 = [u8; 4];
 
 #[derive(Encode, Decode, Default, Clone, PartialEq)]
 pub struct Domain<AccountId, Balance, Moment> {
@@ -33,6 +34,7 @@ pub struct Domain<AccountId, Balance, Moment> {
 	highest_bid: Balance,
 	bidder: AccountId,
 	auction_closed: Moment,
+	ipv4: IPV4,
 }
 
 
@@ -69,7 +71,7 @@ decl_module! {
 		
 		
 		// Register domain with 1 year ttl(31556926000 milliseconds) and 1 milli DEV(0.001 DEV) base price
-		pub fn register_domain(origin, domain_hash: T::Hash) -> Result {
+		pub fn register_domain(origin, domain_hash: T::Hash, ipv4: [u8; 4]) -> Result {
 			let sender = ensure_signed(origin)?;
 			ensure!(!<Resolver<T>>::exists(domain_hash), "The domain already exists");
 			// Convert numbers into generic types which codec supports
@@ -90,7 +92,8 @@ decl_module! {
 				available: false,
 				highest_bid: T::Balance::from(0),
 				bidder: sender.clone(),
-				auction_closed: T::Moment::from(0)
+				auction_closed: T::Moment::from(0),
+				ipv4: ipv4,
 				};
 
 			// Insert new domain to the Resolver state
@@ -106,6 +109,26 @@ decl_module! {
 			// Deposit event
 			Self::deposit_event(RawEvent::DomainRegistered(sender.clone(), init_price, ttl, reg_date));
 			
+			Ok(())
+		}
+
+		pub fn set_ipv4(origin, domain_hash: T::Hash, ipv4: [u8; 4]) -> Result {
+			// Ensure that 
+			// domain exists
+			ensure!(<Resolver<T>>::exists(domain_hash), "The domain does not exist");
+			// the sender is the source of the domain
+			let sender = ensure_signed(origin)?;
+			let mut new_domain = Self::domain(domain_hash);
+			ensure!(sender == new_domain.source, "you are not the source of the domain");
+			
+			// Set ipv4 for new domain
+			let old_ipv4 = new_domain.ipv4;
+			new_domain.ipv4 = ipv4;
+
+			// Change domain data with the new one and emit event
+			<Resolver<T>>::mutate(domain_hash.clone(), |domain| *domain = new_domain.clone());
+			Self::deposit_event(RawEvent::SetIPV4(domain_hash, old_ipv4, new_domain.ipv4));
+
 			Ok(())
 		}
 
@@ -236,6 +259,7 @@ decl_event!(
 	pub enum Event<T> where AccountId = <T as system::Trait>::AccountId, <T as system::Trait>::Hash, <T as balances::Trait>::Balance, <T as timestamp::Trait>::Moment
  {
 		DomainRegistered(AccountId, Balance, Moment, Moment),
+		SetIPV4(Hash, IPV4, IPV4),
 		NewAuction(AccountId, Hash, Moment, Moment), 
 		NewBid(AccountId, Hash, Balance),
 		AuctionFinalized(AccountId, Hash, Balance),
