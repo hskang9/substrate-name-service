@@ -21,19 +21,19 @@ use rstd::prelude::*;
 // FIXME: TryFrom causes a bug for inconsistency in Storage hash, actually type bigger than u32 causes an error
 
 // 1 year in seconds
-const YEAR: u32 =  31556952;
+const YEAR_PERIOD: u32 =  5259492;
 pub type IPV4 = [u8; 4];
 
 #[derive(Encode, Decode, Default, Clone, PartialEq)]
-pub struct Domain<AccountId, Balance, Moment> {
+pub struct Domain<AccountId, Balance, BlockNumber> {
 	source: AccountId,
 	price: Balance,
-	ttl: Moment,
-	registered_date: Moment,
+	ttl: BlockNumber,
+	registered_date: BlockNumber,
 	available: bool,
 	highest_bid: Balance,
 	bidder: AccountId,
-	auction_closed: Moment,
+	auction_closed: BlockNumber,
 	ipv4: IPV4,
 }
 
@@ -57,7 +57,7 @@ decl_storage! {
 		/// > var blake = require('blakejs');
 		/// > console.log(blake.blake2sHex('hyungsukkang.dot'))
 		/// fecf3628563657233c1d29fd6589bcb792d1ce7611892490c3dd5857647006d7
-		Resolver get(domain): map T::Hash => Domain<T::AccountId, T::Balance, T::Moment>;
+		Resolver get(domain): map T::Hash => Domain<T::AccountId, T::Balance, T::BlockNumber>;
 	}
 }
 
@@ -76,9 +76,9 @@ decl_module! {
 			ensure!(!<Resolver<T>>::exists(domain_hash), "The domain already exists");
 			// Convert numbers into generic types which codec supports
 			// Generic types can process arithmetics and comparisons just as other rust variables
-			let ttl = Self::to_milli(T::Moment::from(YEAR));
+			let ttl = T::BlockNumber::from(YEAR_PERIOD);
 			let init_price = Self::to_balance(1, "milli");
-			let reg_date: T::Moment = <timestamp::Module<T>>::now();
+			let reg_date: T::BlockNumber = <system::Module<T>>::block_number(); 
 			
 			// Try to withdraw registration fee from the user without killing the account
 			let _ = <balances::Module<T> as Currency<_>>::withdraw(&sender, init_price, WithdrawReason::Reserve, ExistenceRequirement::KeepAlive)?;			
@@ -92,7 +92,7 @@ decl_module! {
 				available: false,
 				highest_bid: T::Balance::from(0),
 				bidder: sender.clone(),
-				auction_closed: T::Moment::from(0),
+				auction_closed: T::BlockNumber::from(0),
 				ipv4: ipv4,
 				};
 
@@ -127,7 +127,8 @@ decl_module! {
 
 			// Change domain data with the new one and emit event
 			<Resolver<T>>::mutate(domain_hash.clone(), |domain| *domain = new_domain.clone());
-			Self::deposit_event(RawEvent::SetIPV4(domain_hash, old_ipv4, new_domain.ipv4));
+			
+			Self::deposit_event(RawEvent::SetIPV4(domain_hash, old_ipv4.to_vec(), new_domain.ipv4.to_vec()));
 
 			Ok(())
 		}
@@ -144,12 +145,12 @@ decl_module! {
 			let sender = ensure_signed(origin)?;
 
 			let mut new_domain = Self::domain(domain_hash.clone());
-			let now = <timestamp::Module<T>>::now();
+			let now = <system::Module<T>>::block_number();
 			// Ensure the sender is the source of the domain and its ttl is not expired
 			ensure!(new_domain.source == sender && now < new_domain.registered_date + new_domain.ttl, "You are either not the source of the domain or the domain is expired");
 			
 			// Extend domain TTL by a year
-			let ttl = Self::to_milli(T::Moment::from(YEAR));
+			let ttl = <system::Module<T>>::block_number();
 			new_domain.ttl += ttl;		
 
 			// Try to withdraw price from the user account to renew the domain 
@@ -171,7 +172,7 @@ decl_module! {
 			ensure!(<Resolver<T>>::exists(domain_hash), "The domain does not exist");
 			// But wait, get domain data and time
  			let mut new_domain = Self::domain(domain_hash.clone());
-			let now = <timestamp::Module<T>>::now();
+			let now = <system::Module<T>>::block_number();
 			// Ensure the sender is the source of the domain or its ttl is expired
 			ensure!(sender == new_domain.source || new_domain.registered_date + new_domain.ttl < now, "You are neither the source of the domain or the claimer after the domain's TTL");
 
@@ -179,8 +180,8 @@ decl_module! {
 			// Set domain available for selling
 			new_domain.available = true;
 
-			// Set auction to be closed after 1 hour(60* 60 seconds) * 1000(milliseconds conversion) using timestamp 
-			let converted = Self::to_milli(T::Moment::from(3600));
+			// Set auction to be closed after 1 hour(600* 6 second block period) using BlockNumber 
+			let converted = T::BlockNumber::from(600);
 			new_domain.auction_closed = now + converted;
 
 			// mutate domain with new_domain struct in the Domain state
@@ -202,7 +203,7 @@ decl_module! {
 			// The auction is available
 			ensure!(new_domain.available, "The auction for the domain is currently not available");
 			// The auction is not finalized
-			let now = <timestamp::Module<T>>::now();
+			let now = <system::Module<T>>::block_number();
 			ensure!(new_domain.auction_closed > now, "The bid for the auction is already finalized");
 			// The bid price is higher than the current highest bid
 			ensure!(new_domain.highest_bid < bid.clone(), "Bid higher");
@@ -226,12 +227,12 @@ decl_module! {
 			ensure!(<Resolver<T>>::exists(domain_hash), "The domain is not registered yet");
 			// But wait, get domain data and time
 			let mut new_domain = Self::domain(domain_hash);
-			let now = <timestamp::Module<T>>::now();
+			let now = <system::Module<T>>::block_number();
 			// The auction is available
 			ensure!(new_domain.available, "The auction for the domain is currently not available");
 			// The auction is finalized or the source wants to finalize the auction(test)
 			// TEST: If you want to test auction finalization without waiting for 1 hour, just add '|| sender == new_domain.source in ensure! macro
-			ensure!(now > new_domain.auction_closed, "The auction has not been finalized yet");
+			ensure!(now > new_domain.auction_closed || sender == new_domain.source, "The auction has not been finalized yet");
 
 			let _ = <balances::Module<T> as Currency<_>>::transfer(&new_domain.bidder, &new_domain.source, new_domain.highest_bid);
 
@@ -239,12 +240,12 @@ decl_module! {
 			new_domain.source = new_domain.bidder.clone();
 			new_domain.price = new_domain.highest_bid;
 			new_domain.available = false;
-			let ttl = Self::to_milli(T::Moment::from(YEAR));
+			let ttl = T::BlockNumber::from(YEAR_PERIOD);
 			new_domain.ttl = ttl;
 			new_domain.registered_date = now;
 			new_domain.available = false;
 			new_domain.highest_bid = T::Balance::from(0);
-			new_domain.auction_closed = T::Moment::from(0);
+			new_domain.auction_closed = T::BlockNumber::from(0);
 
 			// mutate domain with new_domain struct in the Domain state
 			<Resolver<T>>::mutate(domain_hash.clone(), |domain| *domain = new_domain.clone());
@@ -256,15 +257,15 @@ decl_module! {
 }
 
 decl_event!(
-	pub enum Event<T> where AccountId = <T as system::Trait>::AccountId, <T as system::Trait>::Hash, <T as balances::Trait>::Balance, <T as timestamp::Trait>::Moment
+	pub enum Event<T> where AccountId = <T as system::Trait>::AccountId, <T as system::Trait>::Hash, <T as system::Trait>::BlockNumber, <T as balances::Trait>::Balance,
  {
-		DomainRegistered(AccountId, Balance, Moment, Moment),
-		SetIPV4(Hash, IPV4, IPV4),
-		NewAuction(AccountId, Hash, Moment, Moment), 
+		DomainRegistered(AccountId, Balance, BlockNumber, BlockNumber),
+		SetIPV4(Hash, Vec<u8>, Vec<u8>),
+		NewAuction(AccountId, Hash, BlockNumber, BlockNumber), 
 		NewBid(AccountId, Hash, Balance),
 		AuctionFinalized(AccountId, Hash, Balance),
-		DomainResolved(Hash, AccountId, Balance, bool, Balance, AccountId, Moment),
-		DomainRenewal(Hash, AccountId, Moment),
+		DomainResolved(Hash, AccountId, Balance, bool, Balance, AccountId, BlockNumber),
+		DomainRenewal(Hash, AccountId, BlockNumber),
 	}
 );
 
