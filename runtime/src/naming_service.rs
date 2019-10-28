@@ -22,7 +22,7 @@ use core::convert::TryFrom;
 
 // 1 year in seconds
 const YEAR: u32 =  31556952;
-const INIT_BID: u64 = 100000000000000000;
+const INIT_BID: u128 = 1000000000000000000000000; // 1 DEV
 
 #[derive(Encode, Decode, Default, Clone, PartialEq)]
 pub struct Domain<AccountId, Balance, Moment> {
