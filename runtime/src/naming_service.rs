@@ -20,7 +20,7 @@ use rstd::prelude::*;
 // use core::convert::TryFrom;
 // FIXME: TryFrom causes a bug for inconsistency in Storage hash, actually type bigger than u32 causes an error
 
-// 1 year in seconds
+// 1 year in blocks
 const YEAR_PERIOD: u32 =  5259492;
 pub type IPV4 = [u8; 4];
 
