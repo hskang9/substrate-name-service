@@ -4,7 +4,6 @@ use system::{ensure_signed};
 use codec::{Encode, Decode};
 use rstd::prelude::*;
 
-
 // 1 year in blockseconds
 // each block is assumed to be generated in 6 seconds. divide that with 31556952(1 year) seconds and you get 5259492 blocks to represent 1 year in blockchain. 
 const YEAR: u32 =  5259492;
@@ -53,14 +52,6 @@ pub struct DataPoint<AccountId> {
 // Module's function and Methods of custom struct to be placed here
 impl<T: Trait> Module<T> {
 
-	pub fn new_datapoint(account: T::AccountId, data: BYTES) -> DataPoint<T::AccountId> {
-		DataPoint {
-			access: vec![account],
-			public: false,
-			data: data,
-		}
-	}
-
 	pub fn new_domain(domain_name: BYTES, source: T::AccountId) -> Domain<T::AccountId, T::Balance, T::BlockNumber> {
 		// Convert numbers into generic types which is mapped to native type in lib.rs
 		// Generic types can process arithmetics and comparisons just as other rust variables
@@ -86,7 +77,7 @@ impl<T: Trait> Module<T> {
 	// TODO: Add this to <balances::Module<T>> and test with u128
 	/// Convert u32 to u128 generic type Balance type
 	pub fn to_balance(u: u32, digit: &str) -> T::Balance {
-		/// Power exponent function
+		// Power exponent function
 		let pow = |u: u32, p: u32| -> T::Balance {
 			let mut base = T::Balance::from(u);
 			for _i in 0..p { 
@@ -95,7 +86,7 @@ impl<T: Trait> Module<T> {
 			return base;
 		};
 		let result = match digit  {
-			"femto" | _ => T::Balance::from(u),
+			"femto" => T::Balance::from(u),
 			"nano" =>  pow(u, 3),
 			"micro" => pow(u, 6),
 			"milli" => pow(u, 9),
@@ -108,12 +99,22 @@ impl<T: Trait> Module<T> {
 			"exa" => pow(u, 30),
 			"zetta" => pow(u, 33),
 			"yotta" => pow(u, 36),
+			_ => T::Balance::from(u),
 		}; 
 		result 
 	}
 
-	
+	pub fn remove_domain(domain_hash: T::Hash, domains: Vec<T::Hash>) -> Vec<T::Hash> {
+		let mut new_reverse_list: Vec<T::Hash> = vec!{};
 
+		for i in domains {
+			if i != domain_hash {
+				new_reverse_list.push(i);
+			}
+		}
+
+		return new_reverse_list;
+	}
 }
 
 
@@ -137,13 +138,8 @@ decl_storage! {
 		/// > console.log(blake.blake2s('hyungsukkang.dot'))
 		/// fecf3628563657233c1d29fd6589bcb792d1ce7611892490c3dd5857647006d7
 		Resolver get(domain): map T::Hash => Domain<T::AccountId, T::Balance, T::BlockNumber>;
-		/// Reverse resolver for account => domain
+		/// Reverse resolver for account => domain_hash
 		Reverse get(account): map T::AccountId => Vec<T::Hash>;
-		/// Account for multichain (account_address, slip-44-chain-index) => {corresponding chain address}(e.g. b"0x6EaD823cfB6d45996b8E413C7bE43282f042A78e")
-		Accounts get(address): map (T::AccountId, u32) => BYTES;
-		/// Private data points for each account (account_address, W23-web2service-index) => {corresponding data points}
-		/// TODO: specify W23-index
-		Privacy get(data_point): map (T::AccountId, u32) => DataPoint<T::AccountId> ;
 	}
 }
 
@@ -169,7 +165,7 @@ decl_module! {
 			// Try to withdraw registration fee from the user without killing the account
 			let _ = <balances::Module<T> as Currency<_>>::withdraw(&sender.clone(), new_domain.price, WithdrawReason::Reserve, ExistenceRequirement::KeepAlive)?;			
 
-			// TODO: Make new profile
+			<Reverse<T>>::insert(sender.clone(), vec![domain_hash]);
 			
 			// Insert new domain to the Resolver state
 			<Resolver<T>>::insert(domain_hash, new_domain.clone());
@@ -194,16 +190,16 @@ decl_module! {
 			ensure!(<Resolver<T>>::exists(domain_hash), "The domain does not exist");
 			// the sender is the source of the domain
 			let sender = ensure_signed(origin)?;
-			let mut domain = Self::domain(domain_hash);
-			ensure!(sender == domain.source, "you are not the source of the domain");
+			let mut new_domain = Self::domain(domain_hash);
+			ensure!(sender == new_domain.source, "you are not the source of the domain");
 			
 			// Set ipv4 for new domain
-			let old_ipv4 = domain.ipv4;
-			domain.ipv4 = ipv4;
+			let old_ipv4 = new_domain.ipv4;
+			new_domain.ipv4 = ipv4;
 
 			// Change domain data with the new one and emit event
-			<Resolver<T>>::mutate(domain_hash.clone(), |d| *d = domain.clone());
-			Self::deposit_event(RawEvent::SetIPV4(domain_hash, old_ipv4, new_domain.ipv4));
+			<Resolver<T>>::mutate(domain_hash.clone(), |d| *d = new_domain.clone());
+			Self::deposit_event(RawEvent::SetIPV4(domain_hash, old_ipv4.to_vec(), new_domain.ipv4.to_vec()));
 
 			Ok(())
 		}
@@ -314,6 +310,26 @@ decl_module! {
 
 			let ttl = T::BlockNumber::from(YEAR);
 
+			// Remove domain hash from the prior owner's reverse registrar
+			let old_reverse = Self::account(new_domain.source.clone());
+			
+			let new_reverse = Self::remove_domain(domain_hash.clone(), old_reverse);
+
+			// Mutate reverse with new_reverse arrray in the Reverse state
+			<Reverse<T>>::mutate(new_domain.source.clone(), |account| *account = new_reverse.clone());
+		
+			// Set reverse for the new owner
+			// if the account is in reverse registrar
+			if <Reverse<T>>::exists(new_domain.bidder.clone()) {
+				let mut new_reverse: Vec<T::Hash> = Self::account(new_domain.bidder.clone());
+				new_reverse.push(domain_hash.clone());
+				// Mutate reverse with new_reverse arrray in the Reverse state
+				<Reverse<T>>::mutate(new_domain.bidder.clone(), |reverses: &mut Vec<T::Hash>| *reverses = new_reverse.clone());
+			} else {
+				let new_reverse = vec![domain_hash];
+				<Reverse<T>>::insert(new_domain.bidder.clone(), new_reverse.clone());
+			}
+
 			// Set new domain data to bidder as source, highest_bid as price, and reinitialize rest of them 
 			new_domain.source = new_domain.bidder.clone();
 			new_domain.price = new_domain.highest_bid;
@@ -324,17 +340,23 @@ decl_module! {
 			new_domain.highest_bid = T::Balance::from(0);
 			new_domain.auction_closed = T::BlockNumber::from(0);
 
-			// mutate domain with new_domain struct in the Domain state
+
+
+			// Mutate domain with new_domain struct in the Domain state
 			<Resolver<T>>::mutate(domain_hash.clone(), |domain| *domain = new_domain.clone());
+			
 			Self::deposit_event(RawEvent::AuctionFinalized(new_domain.bidder, domain_hash, new_domain.highest_bid));
 
 			Ok(())
 		}
 
+		pub fn reverse_resolve(_origin, account_id: T::AccountId) -> Result {
+			ensure!(<Reverse<T>>::exists(account_id.clone()), "The account have not registered or owned any domain");
+			let domains = Self::account(account_id.clone());
+			Self::deposit_event(RawEvent::ReverseResolved(account_id, domains));
 
-////////////////////////////////////////////////////////////////////////////////////////////////
-/// accounts and data point logics //////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////
+			Ok(())			
+		}
 	}
 }
 
@@ -342,11 +364,12 @@ decl_event!(
 	pub enum Event<T> where AccountId = <T as system::Trait>::AccountId, <T as system::Trait>::Hash, <T as balances::Trait>::Balance, <T as system::Trait>::BlockNumber
  {
 		DomainRegistered(AccountId, Balance, BlockNumber, BlockNumber),
-		SetIPV4(Hash, IPV4, IPV4),
+		SetIPV4(Hash, Vec<u8>, Vec<u8>),
 		NewAuction(AccountId, Hash, BlockNumber, BlockNumber), 
 		NewBid(AccountId, Hash, Balance),
 		AuctionFinalized(AccountId, Hash, Balance),
 		DomainResolved(Hash, AccountId, Balance, bool, Balance, AccountId, BlockNumber),
+		ReverseResolved(AccountId, Vec<Hash>),
 		DomainRenewal(Hash, AccountId, BlockNumber),
 	}
 );
