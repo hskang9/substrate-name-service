@@ -159,7 +159,7 @@ decl_module! {
 /// domain and reverse logics //////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////	
 			
-		// Register domain with estimated 1 year ttl blocktime(31556926000 milliseconds) and 1 milli DEV(0.001 DEV) base price
+		/// Register domain with estimated 1 year ttl blocktime(31556926000 milliseconds) and 1 milli DEV(0.001 DEV) base price
 		pub fn register_domain(origin, domain_hash: T::Hash, domain_name: BYTES) -> Result {
 			let sender = ensure_signed(origin)?;
 			ensure!(!<Resolver<T>>::exists(domain_hash), "The domain already exists");
@@ -187,21 +187,22 @@ decl_module! {
 			Ok(())
 		}
 
+		/// Set IPV4 for existing domain
 		pub fn set_ipv4(origin, domain_hash: T::Hash, ipv4: IPV4) -> Result {
 			// Ensure that 
 			// domain exists
 			ensure!(<Resolver<T>>::exists(domain_hash), "The domain does not exist");
 			// the sender is the source of the domain
 			let sender = ensure_signed(origin)?;
-			let mut new_domain = Self::domain(domain_hash);
-			ensure!(sender == new_domain.source, "you are not the source of the domain");
+			let mut domain = Self::domain(domain_hash);
+			ensure!(sender == domain.source, "you are not the source of the domain");
 			
 			// Set ipv4 for new domain
-			let old_ipv4 = new_domain.ipv4;
-			new_domain.ipv4 = ipv4;
+			let old_ipv4 = domain.ipv4;
+			domain.ipv4 = ipv4;
 
 			// Change domain data with the new one and emit event
-			<Resolver<T>>::mutate(domain_hash.clone(), |domain| *domain = new_domain.clone());
+			<Resolver<T>>::mutate(domain_hash.clone(), |d| *d = domain.clone());
 			Self::deposit_event(RawEvent::SetIPV4(domain_hash, old_ipv4, new_domain.ipv4));
 
 			Ok(())
