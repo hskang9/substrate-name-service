@@ -252,8 +252,8 @@ impl sudo::Trait for Runtime {
 	type Proposal = Call;
 }
 
-/// Used for the module template in `./template.rs`
-impl naming_service::Trait for Runtime {
+/// Used for the module template in `./name_service.rs`
+impl name_service::Trait for Runtime {
 	type Event = Event;
 }
 
@@ -271,7 +271,7 @@ construct_runtime!(
 		Balances: balances::{default, Error},
 		Sudo: sudo,
 		// Used for the module template in `./template.rs`
-		NamingService: naming_service::{Module, Call, Storage, Event<T>},
+		NameService: name_service::{Module, Call, Storage, Event<T>},
 	}
 );
 

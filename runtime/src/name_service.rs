@@ -4,14 +4,9 @@ use system::{ensure_signed};
 use codec::{Encode, Decode};
 use rstd::prelude::*;
 
-// The timestamp inherent type is u64 and Substrate calculates as milliseconds, but `From` for all generic types supports u8, u16, u32 in SimpleArithmetic trait, saying that those are not fallible.
-// Therefore, use TryFrom for big integers
-// FIXME: TryFrom does not support unwrap() in its result so make function for conversion
-// use core::convert::TryFrom;
-// FIXME: TryFrom causes a bug for inconsistency in Storage hash, actually type bigger than u32 causes an error
 
 // 1 year in blockseconds
-// each block is assumed to be generated in 6 seconds. divide that with 31556952(1 year) seconds and you get 5259492 blocks. 
+// each block is assumed to be generated in 6 seconds. divide that with 31556952(1 year) seconds and you get 5259492 blocks to represent 1 year in blockchain. 
 const YEAR: u32 =  5259492;
 pub type IPV4 = [u8; 4];
 pub type IPV6 = [u16; 6];
@@ -91,7 +86,8 @@ impl<T: Trait> Module<T> {
 	// TODO: Add this to <balances::Module<T>> and test with u128
 	/// Convert u32 to u128 generic type Balance type
 	pub fn to_balance(u: u32, digit: &str) -> T::Balance {
-		let power = |u: u32, p: u32| -> T::Balance {
+		/// Power exponent function
+		let pow = |u: u32, p: u32| -> T::Balance {
 			let mut base = T::Balance::from(u);
 			for _i in 0..p { 
 				base *= T::Balance::from(10)
@@ -99,20 +95,19 @@ impl<T: Trait> Module<T> {
 			return base;
 		};
 		let result = match digit  {
-			"femto" => T::Balance::from(u),
-			"nano" =>  power(u, 3),
-			"micro" => power(u, 6),
-			"milli" => power(u, 9),
-			"one" => power(u,12),
-			"kilo" => power(u, 15),
-			"mega" => power(u, 18),
-			"giga" => power(u, 21),
-			"tera" => power(u, 24),
-			"peta" => power(u, 27),
-			"exa" => power(u, 30),
-			"zetta" => power(u, 33),
-			"yotta" => power(u, 36),
-			_ => T::Balance::from(u)
+			"femto" | _ => T::Balance::from(u),
+			"nano" =>  pow(u, 3),
+			"micro" => pow(u, 6),
+			"milli" => pow(u, 9),
+			"one" => pow(u,12),
+			"kilo" => pow(u, 15),
+			"mega" => pow(u, 18),
+			"giga" => pow(u, 21),
+			"tera" => pow(u, 24),
+			"peta" => pow(u, 27),
+			"exa" => pow(u, 30),
+			"zetta" => pow(u, 33),
+			"yotta" => pow(u, 36),
 		}; 
 		result 
 	}
@@ -132,7 +127,7 @@ pub trait Trait: system::Trait + balances::Trait {
 
 // This module's storage items.
 decl_storage! {
-	trait Store for Module<T: Trait> as NamingServiceModule {
+	trait Store for Module<T: Trait> as NameServiceModule {
 		/// Total number of domains
 		Domains get(total_domains): u64;
 		/// Hash is the blake2b hash of the domain name
