@@ -22,7 +22,7 @@ use core::convert::TryFrom;
 
 // 1 year in seconds
 const YEAR: u32 =  31556952;
-const INIT_BID: u128 = 1000000000000000000000000; // 1 DEV
+const INIT_BID: u128 = 10000000000000000000000000; // 10 DEV
 
 #[derive(Encode, Decode, Default, Clone, PartialEq)]
 pub struct Domain<AccountId, Balance, Moment> {
@@ -80,6 +80,7 @@ decl_module! {
 				Ok(v) => v,
 				Err(e) => T::Balance::from(1)
 			};
+			ensure!(init_price != T::Balance::from(1), "conversion error");
 			let reg_date: T::Moment = <timestamp::Module<T>>::now();
 			
 			// Try to withdraw registration fee from the user without killing the account
