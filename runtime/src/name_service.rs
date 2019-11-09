@@ -1,13 +1,3 @@
-/// A runtime module template with necessary imports
-
-/// Feel free to remove or edit this file as needed.
-/// If you change the name of this file, make sure to update its references in runtime/src/lib.rs
-/// If you remove this file, you can remove those references
-
-
-/// For more guidance on Substrate modules, see the example module
-/// https://github.com/paritytech/substrate/blob/master/srml/example/src/lib.rs
-
 use support::{decl_module, decl_storage, decl_event, dispatch::Result, ensure};
 use support::traits::{Currency, WithdrawReason, ExistenceRequirement};
 use system::{ensure_signed};
