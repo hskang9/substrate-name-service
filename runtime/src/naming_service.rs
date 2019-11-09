@@ -175,16 +175,14 @@ decl_module! {
 		pub fn register_domain(origin, domain_hash: T::Hash, domain_name: BYTES) -> Result {
 			let sender = ensure_signed(origin)?;
 			ensure!(!<Resolver<T>>::exists(domain_hash), "The domain already exists");
+			// make new Domain struct
 			let new_domain = Self::new_domain(domain_name, sender.clone());
-			
 
 			// Try to withdraw registration fee from the user without killing the account
 			let _ = <balances::Module<T> as Currency<_>>::withdraw(&sender.clone(), new_domain.price, WithdrawReason::Reserve, ExistenceRequirement::KeepAlive)?;			
 
-			// make new Domain struct
+			// TODO: Make new profile
 			
-			let data_point = Self::new_datapoint(sender.clone(), b"sfsfdsf".to_vec());
-
 			// Insert new domain to the Resolver state
 			<Resolver<T>>::insert(domain_hash, new_domain.clone());
 
