@@ -169,13 +169,16 @@ decl_module! {
 		// Initializing events
 		// this is needed only if you are using events in your module
 		fn deposit_event() = default;
-		
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+/// domain and reverse logics //////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////	
 			
 		// Register domain with estimated 1 year ttl blocktime(31556926000 milliseconds) and 1 milli DEV(0.001 DEV) base price
 		pub fn register_domain(origin, domain_hash: T::Hash, domain_name: BYTES) -> Result {
 			let sender = ensure_signed(origin)?;
 			ensure!(!<Resolver<T>>::exists(domain_hash), "The domain already exists");
-			// make new Domain struct
+			// Make new Domain struct
 			let new_domain = Self::new_domain(domain_name, sender.clone());
 
 			// Try to withdraw registration fee from the user without killing the account
@@ -341,6 +344,11 @@ decl_module! {
 
 			Ok(())
 		}
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+/// accounts and data point logics //////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////
 	}
 }
 
