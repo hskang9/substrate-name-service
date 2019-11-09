@@ -13,6 +13,7 @@ use support::traits::{Currency, WithdrawReason, ExistenceRequirement};
 use system::{ensure_signed};
 use codec::{Encode, Decode};
 use rstd::prelude::*;
+use sr_std::collections::BTreeMap;
 
 // The timestamp inherent type is u64 and Substrate calculates as milliseconds, but `From` for all generic types supports u8, u16, u32 in SimpleArithmetic trait, saying that those are not fallible.
 // Therefore, use TryFrom for big integers
@@ -20,26 +21,37 @@ use rstd::prelude::*;
 // use core::convert::TryFrom;
 // FIXME: TryFrom causes a bug for inconsistency in Storage hash, actually type bigger than u32 causes an error
 
-// 1 year in seconds
-const YEAR: u32 =  31556952;
+// 1 year in blockseconds
+// each block is assumed to be generated in 6 seconds. divide that with 31556952(1 year) seconds and you get 5259492 blocks. 
+const YEAR: u32 =  5259492;
 pub type IPV4 = [u8; 4];
+pub type IPV6 = [u16; 6];
+pub type BYTES = Vec<u8>;
 
 #[derive(Encode, Decode, Default, Clone, PartialEq)]
-pub struct Domain<AccountId, Balance, Moment> {
+pub struct Domain<AccountId, Balance, BlockNumber> {
+	name: BYTES,
 	source: AccountId,
 	price: Balance,
-	ttl: Moment,
-	registered_date: Moment,
+	ttl: BlockNumber,
+	registered_date: BlockNumber,
 	available: bool,
 	highest_bid: Balance,
 	bidder: AccountId,
-	auction_closed: Moment,
+	auction_closed: BlockNumber,
 	ipv4: IPV4,
+}
+
+#[derive(Encode, Decode, Default, Clone, PartialEq)]
+pub struct Profile<Hash> {
+	domains: Vec<Hash>,
+	accounts: BTreeMap<u32, BYTES>,
+	W23: BTreeMap<u32, BYTES>
 }
 
 
 /// The module's configuration trait.
-pub trait Trait: system::Trait + balances::Trait + timestamp::Trait {
+pub trait Trait: system::Trait + balances::Trait {
 	/// The overarching event type.
 	type Event: From<Event<Self>> + Into<<Self as system::Trait>::Event>;
 	
@@ -57,7 +69,7 @@ decl_storage! {
 		/// > var blake = require('blakejs');
 		/// > console.log(blake.blake2sHex('hyungsukkang.dot'))
 		/// fecf3628563657233c1d29fd6589bcb792d1ce7611892490c3dd5857647006d7
-		Resolver get(domain): map T::Hash => Domain<T::AccountId, T::Balance, T::Moment>;
+		Resolver get(domain): map T::Hash => Domain<T::AccountId, T::Balance, T::BlockNumber>;
 	}
 }
 
@@ -69,22 +81,24 @@ decl_module! {
 		// this is needed only if you are using events in your module
 		fn deposit_event() = default;
 		
-		
+		let ttl = T::BlockNumber::from(YEAR);
+			
 		// Register domain with 1 year ttl(31556926000 milliseconds) and 1 milli DEV(0.001 DEV) base price
-		pub fn register_domain(origin, domain_hash: T::Hash, ipv4: [u8; 4]) -> Result {
+		pub fn register_domain(origin, domain_hash: T::Hash, domain_name: BYTES, ipv4: IPV4) -> Result {
 			let sender = ensure_signed(origin)?;
 			ensure!(!<Resolver<T>>::exists(domain_hash), "The domain already exists");
 			// Convert numbers into generic types which codec supports
 			// Generic types can process arithmetics and comparisons just as other rust variables
-			let ttl = Self::to_milli(T::Moment::from(YEAR));
+			let ttl = T::BlockNumber::from(YEAR);
 			let init_price = Self::to_balance(1, "milli");
-			let reg_date: T::Moment = <timestamp::Module<T>>::now();
+			let reg_date: T::BlockNumber = <system::Module<T>>::block_number();
 			
 			// Try to withdraw registration fee from the user without killing the account
 			let _ = <balances::Module<T> as Currency<_>>::withdraw(&sender, init_price, WithdrawReason::Reserve, ExistenceRequirement::KeepAlive)?;			
 
 			// make new Domain struct
 			let new_domain = Domain{
+				name: domain_name,
 				source: sender.clone(),
 				price: init_price,
 				ttl: ttl,
@@ -112,7 +126,7 @@ decl_module! {
 			Ok(())
 		}
 
-		pub fn set_ipv4(origin, domain_hash: T::Hash, ipv4: [u8; 4]) -> Result {
+		pub fn set_ipv4(origin, domain_hash: T::Hash, ipv4: IPV4) -> Result {
 			// Ensure that 
 			// domain exists
 			ensure!(<Resolver<T>>::exists(domain_hash), "The domain does not exist");
@@ -149,7 +163,7 @@ decl_module! {
 			ensure!(new_domain.source == sender && now < new_domain.registered_date + new_domain.ttl, "You are either not the source of the domain or the domain is expired");
 			
 			// Extend domain TTL by a year
-			let ttl = Self::to_milli(T::Moment::from(YEAR));
+			let ttl = T::BlockNumber::from(YEAR);
 			new_domain.ttl += ttl;		
 
 			// Try to withdraw price from the user account to renew the domain 
