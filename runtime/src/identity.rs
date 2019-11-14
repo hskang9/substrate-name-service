@@ -28,7 +28,7 @@ impl<T: Trait> Module<T> {
 		}
 	}
 
-	pub fn can_access(account: T::AccountId, data_point: DataPoint) -> bool {
+	pub fn can_access(account: T::AccountId, data_point: DataPoint<T::AccountId>) -> bool {
 		for i in data_point.access {
 			if i == account {
 				return true;
@@ -37,24 +37,10 @@ impl<T: Trait> Module<T> {
 		return false;
 	}
 
-	pub fn add_access(appointer: T::AccountId, appointee: T::AccountId, data_point: DataPoint) -> DataPoint<T::AccountId> {
-		if Self::can_access(appointer, data_point) {
-			data_point.access.push(appointee);
-			return data_point;
-		}
-	}
-
-	pub fn remove_access(remover: T::AccountId, removed: T::AccountId, data_point: DataPoint) -> DataPoint<T::AccountId> {
-        if Self::can_access(remover, data_point) {
-            data_point.access.remove_item(removed);
-            return data_point;
-        }
-    }
-
 	// TODO: Add this to <balances::Module<T>> and test with u128
 	/// Convert u32 to u128 generic type Balance type
 	pub fn to_balance(u: u32, digit: &str) -> T::Balance {
-		/// Power exponent function
+		// Power exponent function
 		let pow = |u: u32, p: u32| -> T::Balance {
 			let mut base = T::Balance::from(u);
 			for _i in 0..p { 
@@ -63,7 +49,7 @@ impl<T: Trait> Module<T> {
 			return base;
 		};
 		let result = match digit  {
-			"femto" | _ => T::Balance::from(u),
+			"femto" => T::Balance::from(u),
 			"nano" =>  pow(u, 3),
 			"micro" => pow(u, 6),
 			"milli" => pow(u, 9),
@@ -76,6 +62,7 @@ impl<T: Trait> Module<T> {
 			"exa" => pow(u, 30),
 			"zetta" => pow(u, 33),
 			"yotta" => pow(u, 36),
+			_ => T::Balance::from(0),
 		}; 
 		result 
 	}
@@ -90,14 +77,11 @@ pub trait Trait: system::Trait + balances::Trait {
 
 // This module's storage items.
 decl_storage! {
-	trait Store for Module<T: Trait> as IdentityModule {
-		/// Total number of domains
-		TotalAccounts get(total_accounts): u64;
-		/// Interchain accounts
-        Accounts get(address): map (T::AccountId, u32) => BYTES;
-		/// Private data points for each account (account_address, W23-web2service-index) => {corresponding data points}
-		/// TODO: specify W23-index
-		Privacy get(data_point): map (T::AccountId, u32) => DataPoint<T::AccountId>;
+	trait Store for Module<T: Trait> as TemplateModule {
+		// Just a dummy storage item.
+		// Here we are declaring a StorageValue, `Something` as a Option<u32>
+		// `get(something)` is the default getter which returns either the stored `u32` or `None` if nothing stored
+		Something get(something): Option<u32>;
 	}
 }
 
@@ -109,17 +93,29 @@ decl_module! {
 		// this is needed only if you are using events in your module
 		fn deposit_event() = default;
 
-////////////////////////////////////////////////////////////////////////////////////////////////
-/// accounts and data point logics //////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////////////////////
+		// Just a dummy entry point.
+		// function that can be called by the external world as an extrinsics call
+		// takes a parameter of the type `AccountId`, stores it and emits an event
+		pub fn do_something(origin, something: u32) -> Result {
+			// TODO: You only need this if you want to check it was signed.
+			let who = ensure_signed(origin)?;
 
+			// TODO: Code to execute when something calls this.
+			// For example: the following line stores the passed in u32 in the storage
+			Something::put(something);
 
+			// here we are raising the Something event
+			Self::deposit_event(RawEvent::SomethingStored(something, who));
+			Ok(())
+		}
 	}
 }
 
 decl_event!(
-	pub enum Event<T> where AccountId = <T as system::Trait>::AccountId, <T as system::Trait>::Hash, <T as balances::Trait>::Balance, <T as system::Trait>::BlockNumber
- {
-		SetAccount(AccountId, u32, BYTES),
+	pub enum Event<T> where AccountId = <T as system::Trait>::AccountId {
+		// Just a dummy event.
+		// Event `Something` is declared with a parameter of the type `u32` and `AccountId`
+		// To emit this event, we call the deposit funtion, from our runtime funtions
+		SomethingStored(u32, AccountId),
 	}
 );

@@ -3,18 +3,20 @@ use support::traits::{Currency, WithdrawReason, ExistenceRequirement};
 use system::{ensure_signed};
 use codec::{Encode, Decode};
 use rstd::prelude::*;
+use sr_primitives;
 
 // 1 year in blockseconds
 // each block is assumed to be generated in 6 seconds. divide that with 31556952(1 year) seconds and you get 5259492 blocks to represent 1 year in blockchain. 
 const YEAR: u32 =  5259492;
-pub type IPV4 = [u8; 4];
-pub type IPV6 = [u16; 6];
-pub type BYTES = Vec<u8>;
+// TODO: Leave this type alias for custom UI elements. polkadot js apps cannot understand them.
+//pub type IPV4 = [u8; 4];
+//pub type IPV6 = [u16; 6];
+//pub type BYTES = Vec<u8>;
 
 #[derive(Encode, Decode, Default, Clone, PartialEq)]
 pub struct Domain<AccountId, Balance, BlockNumber> {
-	/// domain name in bytestring e.g. b'hyungsukkang.eth'
-	name: BYTES,
+	/// domain name in Vec<u8>tring e.g. b'hyungsukkang.eth'
+	name: Vec<u8>,
 	/// source of this domain a.k.a. the address of the blockchain
 	source: AccountId,
 	/// the current domain price
@@ -34,9 +36,9 @@ pub struct Domain<AccountId, Balance, BlockNumber> {
 
 	/// TODO: Try to make browser engine which asks for this with Servo fork
 	/// IPV4 in case where the owner wants to put IP address
-	ipv4: IPV4,
+	ipv4: [u8; 4],
 	/// IPV6 in case where the owner wants to put IP address for his or her IoT device 
-	ipv6: IPV6,
+	ipv6: [u16; 6],
 }
 
 #[derive(Encode, Decode, Default, Clone, PartialEq)]
@@ -46,13 +48,13 @@ pub struct DataPoint<AccountId> {
 	/// Whether the data is public and can be shown to anyone
 	public: bool,
 	/// Encrypted/Decrypted data in byte array(e.g. b"twt://@{twitter username}", b"ipfs://{some IPFS hash}", b"jpg://{some blob of image}" )
-	data: BYTES,
+	data: Vec<u8>,
 }
 
 // Module's function and Methods of custom struct to be placed here
 impl<T: Trait> Module<T> {
 
-	pub fn new_domain(domain_name: BYTES, source: T::AccountId) -> Domain<T::AccountId, T::Balance, T::BlockNumber> {
+	fn new_domain(domain_name: Vec<u8>, source: T::AccountId) -> Domain<T::AccountId, T::Balance, T::BlockNumber> {
 		// Convert numbers into generic types which is mapped to native type in lib.rs
 		// Generic types can process arithmetics and comparisons just as other rust variables
 		let ttl = T::BlockNumber::from(YEAR);
@@ -76,7 +78,7 @@ impl<T: Trait> Module<T> {
 
 	// TODO: Add this to <balances::Module<T>> and test with u128
 	/// Convert u32 to u128 generic type Balance type
-	pub fn to_balance(u: u32, digit: &str) -> T::Balance {
+	fn to_balance(u: u32, digit: &str) -> T::Balance {
 		// Power exponent function
 		let pow = |u: u32, p: u32| -> T::Balance {
 			let mut base = T::Balance::from(u);
@@ -104,7 +106,7 @@ impl<T: Trait> Module<T> {
 		result 
 	}
 
-	pub fn remove_domain(domain_hash: T::Hash, domains: Vec<T::Hash>) -> Vec<T::Hash> {
+	fn remove_domain(domain_hash: T::Hash, domains: Vec<T::Hash>) -> Vec<T::Hash> {
 		let mut new_reverse_list: Vec<T::Hash> = vec!{};
 
 		for i in domains {
@@ -114,6 +116,11 @@ impl<T: Trait> Module<T> {
 		}
 
 		return new_reverse_list;
+	}
+
+	pub fn end_block(now: T::BlockNumber) -> Result {
+		// pick out another 
+		Ok(())
 	}
 }
 
@@ -151,12 +158,21 @@ decl_module! {
 		// this is needed only if you are using events in your module
 		fn deposit_event() = default;
 
+		// when a block is initialized
+		fn on_initialize(n: T::BlockNumber) {
+			if let Err(e) = Self::check_auction(n) {
+				sr_primitives::print(e);
+			}
+		}
+
+	
+
 ////////////////////////////////////////////////////////////////////////////////////////////////
 /// domain and reverse logics //////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////	
 			
 		/// Register domain with estimated 1 year ttl blocktime(31556926000 milliseconds) and 1 milli DEV(0.001 DEV) base price
-		pub fn register_domain(origin, domain_hash: T::Hash, domain_name: BYTES) -> Result {
+		pub fn register_domain(origin, domain_hash: T::Hash, domain_name: Vec<u8>) -> Result {
 			let sender = ensure_signed(origin)?;
 			ensure!(!<Resolver<T>>::exists(domain_hash), "The domain already exists");
 			// Make new Domain struct
@@ -184,7 +200,7 @@ decl_module! {
 		}
 
 		/// Set IPV4 for existing domain
-		pub fn set_ipv4(origin, domain_hash: T::Hash, ipv4: IPV4) -> Result {
+		pub fn set_ipv4(origin, domain_hash: T::Hash, ipv4: [u8; 4]) -> Result {
 			// Ensure that 
 			// domain exists
 			ensure!(<Resolver<T>>::exists(domain_hash), "The domain does not exist");

@@ -61,8 +61,9 @@ pub type Hash = primitives::H256;
 /// Digest item type.
 pub type DigestItem = generic::DigestItem<Hash>;
 
-/// Used for the module template in `./template.rs`
+/// Custom runtime modules
 mod name_service;
+mod identity;
 
 /// Opaque types. These are used by the CLI to instantiate machinery that don't need to know
 /// the specifics of the runtime. They can then be made to be agnostic over specific formats
@@ -257,6 +258,10 @@ impl name_service::Trait for Runtime {
 	type Event = Event;
 }
 
+impl identity::Trait for Runtime {
+	type Event = Event;
+}
+
 construct_runtime!(
 	pub enum Runtime where
 		Block = Block,
@@ -270,8 +275,9 @@ construct_runtime!(
 		Indices: indices::{default, Config<T>},
 		Balances: balances::{default, Error},
 		Sudo: sudo,
-		// Used for the module template in `./template.rs`
+		// Custom modules
 		NameService: name_service::{Module, Call, Storage, Event<T>},
+		Identity: identity::{Module, Call, Storage, Event<T>},
 	}
 );
 
