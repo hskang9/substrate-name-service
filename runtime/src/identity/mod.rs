@@ -3,6 +3,7 @@ use support::traits::{Currency, WithdrawReason, ExistenceRequirement};
 use system::{ensure_signed};
 use codec::{Encode, Decode};
 use rstd::prelude::*;
+mod tests;
 
 pub type BYTES = Vec<u8>;
 
