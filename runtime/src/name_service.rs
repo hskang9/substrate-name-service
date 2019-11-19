@@ -1,18 +1,9 @@
-/// A runtime module template with necessary imports
-
-/// Feel free to remove or edit this file as needed.
-/// If you change the name of this file, make sure to update its references in runtime/src/lib.rs
-/// If you remove this file, you can remove those references
-
-
-/// For more guidance on Substrate modules, see the example module
-/// https://github.com/paritytech/substrate/blob/master/srml/example/src/lib.rs
-
 use support::{decl_module, decl_storage, decl_event, dispatch::Result, ensure};
 use support::traits::{Currency, WithdrawReason, ExistenceRequirement};
 use system::{ensure_signed};
 use codec::{Encode, Decode};
 use rstd::prelude::*;
+use sr_primitives;
 
 // The timestamp inherent type is u64 and Substrate calculates as milliseconds, but `From` for all generic types supports u8, u16, u32 in SimpleArithmetic trait, saying that those are not fallible.
 // Therefore, use TryFrom for big integers
@@ -27,11 +18,14 @@ pub type IPV4 = [u8; 4];
 #[derive(Encode, Decode, Default, Clone, PartialEq)]
 pub struct Domain<AccountId, Balance, BlockNumber> {
 	source: AccountId,
+	/// the current domain price
 	price: Balance,
 	ttl: BlockNumber,
 	registered_date: BlockNumber,
 	available: bool,
+	/// highest bid in the auction stage
 	highest_bid: Balance,
+	/// bidder who bidded highest
 	bidder: AccountId,
 	auction_closed: BlockNumber,
 	ipv4: IPV4,
@@ -39,7 +33,7 @@ pub struct Domain<AccountId, Balance, BlockNumber> {
 
 
 /// The module's configuration trait.
-pub trait Trait: system::Trait + balances::Trait + timestamp::Trait {
+pub trait Trait: system::Trait + balances::Trait {
 	/// The overarching event type.
 	type Event: From<Event<Self>> + Into<<Self as system::Trait>::Event>;
 	
@@ -48,14 +42,14 @@ pub trait Trait: system::Trait + balances::Trait + timestamp::Trait {
 
 // This module's storage items.
 decl_storage! {
-	trait Store for Module<T: Trait> as NamingServiceModule {
+	trait Store for Module<T: Trait> as NameServiceModule {
 		/// Total number of domains
 		Domains get(total_domains): u64;
 		/// Hash is the blake2b hash of the domain name
 		/// In Javascript, use @polkadot/util-crypto's blake2AsHex("<domain name you want>" 256) and put the hexstring in the polkadot.js apps param.
 		/// Or use blakejs with this example.
 		/// > var blake = require('blakejs');
-		/// > console.log(blake.blake2sHex('hyungsukkang.dot'))
+		/// > console.log(blake.blake2s('hyungsukkang.dot'))
 		/// fecf3628563657233c1d29fd6589bcb792d1ce7611892490c3dd5857647006d7
 		Resolver get(domain): map T::Hash => Domain<T::AccountId, T::Balance, T::BlockNumber>;
 	}
@@ -68,10 +62,22 @@ decl_module! {
 		// Initializing events
 		// this is needed only if you are using events in your module
 		fn deposit_event() = default;
-		
-		
-		// Register domain with 1 year ttl(31556926000 milliseconds) and 1 milli DEV(0.001 DEV) base price
-		pub fn register_domain(origin, domain_hash: T::Hash, ipv4: [u8; 4]) -> Result {
+
+		// when a block is initialized
+		fn on_initialize(n: T::BlockNumber) {
+			if let Err(e) = Self::check_auction(n) {
+				sr_primitives::print(e);
+			}
+		}
+
+	
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+/// domain and reverse logics //////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////	
+			
+		/// Register domain with estimated 1 year ttl blocktime(31556926000 milliseconds) and 1 milli DEV(0.001 DEV) base price
+		pub fn register_domain(origin, domain_hash: T::Hash, domain_name: Vec<u8>) -> Result {
 			let sender = ensure_signed(origin)?;
 			ensure!(!<Resolver<T>>::exists(domain_hash), "The domain already exists");
 			// Convert numbers into generic types which codec supports
@@ -96,8 +102,10 @@ decl_module! {
 				ipv4: ipv4,
 				};
 
+			<Reverse<T>>::insert(sender.clone(), vec![domain_hash]);
+			
 			// Insert new domain to the Resolver state
-			<Resolver<T>>::insert(domain_hash, new_domain);
+			<Resolver<T>>::insert(domain_hash, new_domain.clone());
 
 			// Increment domain number	
 			let mut domains = Self::total_domains();
@@ -107,11 +115,12 @@ decl_module! {
 			Domains::put(domains);			
 
 			// Deposit event
-			Self::deposit_event(RawEvent::DomainRegistered(sender.clone(), init_price, ttl, reg_date));
+			Self::deposit_event(RawEvent::DomainRegistered(sender.clone(), new_domain.price, new_domain.ttl, new_domain.registered_date));
 			
 			Ok(())
 		}
 
+		/// Set IPV4 for existing domain
 		pub fn set_ipv4(origin, domain_hash: T::Hash, ipv4: [u8; 4]) -> Result {
 			// Ensure that 
 			// domain exists
@@ -133,7 +142,7 @@ decl_module! {
 			Ok(())
 		}
 
-		pub fn resolve(origin, domain_hash: T::Hash) -> Result {
+		pub fn resolve(_origin, domain_hash: T::Hash) -> Result {
 			ensure!(<Resolver<T>>::exists(domain_hash), "The domain does not exist");
 			let domain = Self::domain(domain_hash);
 			Self::deposit_event(RawEvent::DomainResolved(domain_hash, domain.source, domain.price, domain.available, domain.highest_bid, domain.bidder, domain.auction_closed));
@@ -221,7 +230,7 @@ decl_module! {
 		}
 
 		pub fn finalize_auction(origin, domain_hash: T::Hash) -> Result {
-			let sender = ensure_signed(origin)?; 
+			let _sender = ensure_signed(origin)?; 
 			// Ensure that
 			// Domain does already exist
 			ensure!(<Resolver<T>>::exists(domain_hash), "The domain is not registered yet");
@@ -236,6 +245,29 @@ decl_module! {
 
 			let _ = <balances::Module<T> as Currency<_>>::transfer(&new_domain.bidder, &new_domain.source, new_domain.highest_bid);
 
+
+			let ttl = T::BlockNumber::from(YEAR);
+
+			// Remove domain hash from the prior owner's reverse registrar
+			let old_reverse = Self::account(new_domain.source.clone());
+			
+			let new_reverse = Self::remove_domain(domain_hash.clone(), old_reverse);
+
+			// Mutate reverse with new_reverse arrray in the Reverse state
+			<Reverse<T>>::mutate(new_domain.source.clone(), |account| *account = new_reverse.clone());
+		
+			// Set reverse for the new owner
+			// if the account is in reverse registrar
+			if <Reverse<T>>::exists(new_domain.bidder.clone()) {
+				let mut new_reverse: Vec<T::Hash> = Self::account(new_domain.bidder.clone());
+				new_reverse.push(domain_hash.clone());
+				// Mutate reverse with new_reverse arrray in the Reverse state
+				<Reverse<T>>::mutate(new_domain.bidder.clone(), |reverses: &mut Vec<T::Hash>| *reverses = new_reverse.clone());
+			} else {
+				let new_reverse = vec![domain_hash];
+				<Reverse<T>>::insert(new_domain.bidder.clone(), new_reverse.clone());
+			}
+
 			// Set new domain data to bidder as source, highest_bid as price, and reinitialize rest of them 
 			new_domain.source = new_domain.bidder.clone();
 			new_domain.price = new_domain.highest_bid;
@@ -247,11 +279,22 @@ decl_module! {
 			new_domain.highest_bid = T::Balance::from(0);
 			new_domain.auction_closed = T::BlockNumber::from(0);
 
-			// mutate domain with new_domain struct in the Domain state
+
+
+			// Mutate domain with new_domain struct in the Domain state
 			<Resolver<T>>::mutate(domain_hash.clone(), |domain| *domain = new_domain.clone());
+			
 			Self::deposit_event(RawEvent::AuctionFinalized(new_domain.bidder, domain_hash, new_domain.highest_bid));
 
 			Ok(())
+		}
+
+		pub fn reverse_resolve(_origin, account_id: T::AccountId) -> Result {
+			ensure!(<Reverse<T>>::exists(account_id.clone()), "The account have not registered or owned any domain");
+			let domains = Self::account(account_id.clone());
+			Self::deposit_event(RawEvent::ReverseResolved(account_id, domains));
+
+			Ok(())			
 		}
 	}
 }
@@ -265,161 +308,6 @@ decl_event!(
 		NewBid(AccountId, Hash, Balance),
 		AuctionFinalized(AccountId, Hash, Balance),
 		DomainResolved(Hash, AccountId, Balance, bool, Balance, AccountId, BlockNumber),
-		DomainRenewal(Hash, AccountId, BlockNumber),
+		DomainRenewed(Hash, AccountId, BlockNumber),
 	}
 );
-
-// Module's function
-impl<T: Trait> Module<T> {
-
-	pub fn to_milli(m: T::Moment) -> T::Moment {
-		m * T::Moment::from(1000)
-	}
-
-	// TODO: Add this to <balances::Module<T>> and test with u128
-	pub fn to_balance(u: u32, digit: &str) -> T::Balance {
-		let power = |u: u32, p: u32| -> T::Balance {
-			let mut base = T::Balance::from(u);
-			for _i in 0..p { 
-				base *= T::Balance::from(10)
-			}
-			return base;
-		};
-		let result = match digit  {
-			"femto" => T::Balance::from(u),
-			"nano" =>  power(u, 3),
-			"micro" => power(u, 6),
-			"milli" => power(u, 9),
-			"one" => power(u,12),
-			"kilo" => power(u, 15),
-			"mega" => power(u, 18),
-			"giga" => power(u, 21),
-			"tera" => power(u, 24),
-			"peta" => power(u, 27),
-			"exa" => power(u, 30),
-			"zetta" => power(u, 33),
-			"yotta" => power(u, 36),
-			_ => T::Balance::from(u)
-		}; 
-		result 
-	}
-
-}
-
-
-
-/// tests for this module
-#[cfg(test)]
-mod tests {
-	use super::*;
-
-	use runtime_io::with_externalities;
-	use primitives::{H256, Blake2Hasher};
-	use support::{impl_outer_origin, assert_ok, parameter_types};
-	use sr_primitives::{traits::{BlakeTwo256, IdentityLookup}, testing::Header};
-	use sr_primitives::weights::Weight;
-	use sr_primitives::Perbill;
-
-	impl_outer_origin! {
-		pub enum Origin for Test {}
-	}
-
-	// For testing the module, we construct most of a mock runtime. This means
-	// first constructing a configuration type (`Test`) which `impl`s each of the
-	// configuration traits of modules we want to use.
-	#[derive(Clone, Eq, PartialEq)]
-	pub struct Test;
-	parameter_types! {
-		pub const BlockHashCount: u64 = 250;
-		pub const MaximumBlockWeight: Weight = 1024;
-		pub const MaximumBlockLength: u32 = 2 * 1024;
-		pub const AvailableBlockRatio: Perbill = Perbill::from_percent(75);
-	}
-	impl system::Trait for Test {
-		type Origin = Origin;
-		type Call = ();
-		type Index = u64;
-		type BlockNumber = u64;
-		type Hash = H256;
-		type Hashing = BlakeTwo256;
-		type AccountId = u64;
-		type Lookup = IdentityLookup<Self::AccountId>;
-		type Header = Header;
-		type WeightMultiplierUpdate = ();
-		type Event = ();
-		type BlockHashCount = BlockHashCount;
-		type MaximumBlockWeight = MaximumBlockWeight;
-		type MaximumBlockLength = MaximumBlockLength;
-		type AvailableBlockRatio = AvailableBlockRatio;
-		type Version = ();
-	}
-
-	impl Trait for Test  {
-		type Event = ();
-	}
-
-	impl timestamp::Trait for Test {
-		type Moment = u64;
-		type OnTimestampSet = ();
-        type MinimumPeriod = ();
-	}
-
-	impl balances::Trait for Test {
-		type Balance = u128;
-		type OnFreeBalanceZero = ();
-		type OnNewAccount = ();
-		type TransactionPayment = ();
-		type TransferPayment = ();
-		type DustRemoval = ();
-		type Event = ();
-		type ExistentialDeposit = ();
-		type TransferFee = ();
-		type CreationFee = ();
-		type TransactionBaseFee = ();
-		type TransactionByteFee = ();
-		type WeightToFee = ();
-	}
-	
-	type NamingServiceModule = Module<Test>;
-
-	// This function basically just builds a genesis storage key/value store according to
-	// our desired mockup.
-	fn new_test_ext() -> runtime_io::TestExternalities<Blake2Hasher> {
-		system::GenesisConfig::default().build_storage::<Test>().unwrap().into()
-	}
-
-	#[test]
-	fn it_works_for_default_value() {
-		with_externalities(&mut new_test_ext(), || {
-			// Just a dummy test for the dummy funtion `do_something`
-			// calling the `do_something` function with a value 42
-			//assert_ok!(TemplateModule::register_domain(""));
-			// asserting that the stored value is equal to what we stored
-			assert_eq!(NamingServiceModule::total_domains(), 0);
-		});
-	}
-
-	#[test]
-	fn test_register_domain() {
-		with_externalities(&mut new_test_ext(), || {
-			let alice = 1u64;
-			let dummy_hash = H256([2; 32]);
-			assert_ok!(NamingServiceModule::register_domain(Origin::signed(alice), dummy_hash));
-			assert_eq!(NamingServiceModule::domain(dummy_hash).source, alice);
-		});
-	}
-
-	// TODO: Test other functions with features
-	// - Catching events after the event
-	// - Set balance of the test account
-
-	#[test]
-	fn test_claim_auction() {
-		with_externalities(&mut new_test_ext(), || {
-			let alice = 1u64;
-			let dummy_hash = H256([2; 32]);
-			assert_ok!(NamingServiceModule::register_domain(Origin::signed(alice), dummy_hash));
-			assert_eq!(NamingServiceModule::domain(dummy_hash).source, alice);
-		});
-	}
-}
