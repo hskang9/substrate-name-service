@@ -61,9 +61,8 @@ pub type Hash = primitives::H256;
 /// Digest item type.
 pub type DigestItem = generic::DigestItem<Hash>;
 
-/// Custom runtime modules
-mod name_service;
-mod identity;
+/// Used for the module template in `./template.rs`
+mod naming_service;
 
 /// Opaque types. These are used by the CLI to instantiate machinery that don't need to know
 /// the specifics of the runtime. They can then be made to be agnostic over specific formats
@@ -253,12 +252,8 @@ impl sudo::Trait for Runtime {
 	type Proposal = Call;
 }
 
-/// Used for the module template in `./name_service.rs`
-impl name_service::Trait for Runtime {
-	type Event = Event;
-}
-
-impl identity::Trait for Runtime {
+/// Used for the module template in `./template.rs`
+impl naming_service::Trait for Runtime {
 	type Event = Event;
 }
 
@@ -275,9 +270,8 @@ construct_runtime!(
 		Indices: indices::{default, Config<T>},
 		Balances: balances::{default, Error},
 		Sudo: sudo,
-		// Custom modules
-		NameService: name_service::{Module, Call, Storage, Event<T>},
-		Identity: identity::{Module, Call, Storage, Event<T>},
+		// Used for the module template in `./template.rs`
+		NamingService: naming_service::{Module, Call, Storage, Event<T>},
 	}
 );
 
